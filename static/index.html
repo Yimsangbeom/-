@@ -1,0 +1,278 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR_자동 채점 프로그램 (ocr.ehancom.com)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
+  <header class="bg-blue-900 text-white px-6 py-4 flex justify-between items-center shadow">
+    <div>
+      <h1 class="text-xl font-bold">📋 OCR_자동 채점 프로그램</h1>
+      <p class="text-xs text-blue-200">2026년 제12회 인터넷중독전문상담사 자격검정 | ocr.ehancom.com</p>
+    </div>
+    <span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span>
+  </header>
+
+  <div class="bg-white border-b px-6 flex gap-2 pt-2">
+    <button onclick="showTab('home')" id="btn-home" class="px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700">🏠 1. 홈 (원본 답안지 & 정답 설정)</button>
+    <button onclick="showTab('grade')" id="btn-grade" class="px-5 py-2.5 font-bold text-slate-500">🚀 2. 채점 시작 (답안지 추가 & 검수)</button>
+    <button onclick="showTab('result')" id="btn-result" class="px-5 py-2.5 font-bold text-slate-500">📊 3. 결과 확인 (엑셀 .xlsx 다운로드)</button>
+  </div>
+
+  <main class="p-6 max-w-7xl mx-auto w-full flex-1">
+    <section id="tab-home" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white p-6 rounded-xl shadow-sm border">
+        <h2 class="text-lg font-bold mb-4">📌 원본 답안지 형식 및 기준 설정</h2>
+        <ul class="text-sm space-y-2 text-slate-600 mb-6">
+          <li>• <b>적용 양식:</b> 2026년 인터넷중독전문상담사 자격검정 OCR/OMR 답안지</li>
+          <li>• <b>과목 구성:</b> A(이해), B(진단), C(기법), D(이론), E(정책) 각 20문항 (총 100문항)</li>
+          <li>• <b>수험번호:</b> 9자리 자동 판독 / <b>문제유형:</b> A형, B형 자동 판독</li>
+        </ul>
+        <div class="space-y-4 border-t pt-4">
+          <div class="flex justify-between items-center">
+            <label class="font-semibold text-sm">문항당 배점</label>
+            <input id="cfg-score" type="number" value="1" step="0.5" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+          </div>
+          <div class="flex justify-between items-center">
+            <label class="font-semibold text-sm">합격 기준 총점</label>
+            <input id="cfg-cutoff" type="number" value="60" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+          </div>
+          <div class="flex justify-between items-center">
+            <label class="font-semibold text-sm">마킹 인식 민감도 (0.25~0.55)</label>
+            <input id="cfg-th" type="number" value="0.38" step="0.02" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+          </div>
+          <button onclick="saveConfig()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg">설정 저장하기</button>
+        </div>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-sm border flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-bold">🔑 정답지 등록 (엑셀 .xlsx 연동)</h2>
+          <div class="flex gap-2">
+            <button onclick="downloadSampleKey()" class="bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold">📤 정답 양식 샘플(.xlsx)</button>
+            <label class="bg-blue-600 text-white text-xs px-3 py-2 rounded font-bold cursor-pointer">
+              📥 정답 엑셀 불러오기(.xlsx)
+              <input type="file" accept=".xlsx" class="hidden" onchange="uploadKeyExcel(event)">
+            </label>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mb-3">※ [2. 채점 시작] 탭에서 정답이 마킹된 PDF/이미지를 올려 자동 인식시킬 수도 있습니다.</p>
+        <div id="key-summary" class="text-sm bg-slate-50 p-4 rounded border flex-1 overflow-y-auto max-h-64 font-mono"></div>
+      </div>
+    </section>
+
+    <section id="tab-grade" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div class="lg:col-span-4 space-y-6">
+        <div class="bg-white p-5 rounded-xl shadow-sm border">
+          <h3 class="font-bold text-base mb-2">🎯 정답 답안지 인식 (마스터 PDF/이미지)</h3>
+          <p class="text-xs text-slate-500 mb-3">A형 또는 B형 정답을 마킹한 스캔본을 올리면 정답으로 자동 세팅됩니다.</p>
+          <label class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg cursor-pointer">
+            📄 정답 답안지 파일 선택
+            <input type="file" accept=".pdf,.png,.jpg,.jpeg" class="hidden" onchange="uploadMasterSheet(event)">
+          </label>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl shadow-sm border space-y-3">
+          <h3 class="font-bold text-base mb-2">➕ 수험생 답안지 추가</h3>
+          <label class="block w-full text-center bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-lg cursor-pointer">
+            📁 + 폴더 전체 검색 (일괄 업로드)
+            <input type="file" webkitdirectory directory multiple class="hidden" onchange="uploadStudentSheets(event)">
+          </label>
+          <label class="block w-full text-center bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-lg cursor-pointer">
+            🖼️ + 개별 파일 추가 (이미지 / PDF)
+            <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" class="hidden" onchange="uploadStudentSheets(event)">
+          </label>
+          <hr class="my-2">
+          <button onclick="clearAllResults()" class="w-full bg-slate-400 hover:bg-slate-500 text-white text-sm font-bold py-2 rounded-lg">🗑️ 답안지 목록 초기화</button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col h-[560px]">
+          <h3 class="font-bold mb-3">📋 답안지 List (<span id="list-count">0</span>장)</h3>
+          <div class="flex-1 overflow-y-auto">
+            <table class="w-full text-xs text-center border-collapse">
+              <thead class="bg-slate-100 sticky top-0">
+                <tr><th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th><th class="p-2 border">총점</th><th class="p-2 border">상태</th></tr>
+              </thead>
+              <tbody id="sheet-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col h-[560px]">
+          <h3 class="font-bold mb-2">🔍 마킹 판독 화면 (초록=정답, 빨강=오답)</h3>
+          <div class="flex-1 bg-slate-900 rounded flex items-center justify-center overflow-hidden">
+            <img id="preview-img" class="max-h-full max-w-full object-contain hidden" />
+            <span id="preview-empty" class="text-slate-400 text-xs">좌측 리스트에서 답안지를 클릭하세요.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-result" class="hidden space-y-4">
+      <div class="bg-white p-5 rounded-xl shadow-sm border flex justify-between items-center">
+        <div id="result-summary" class="font-bold text-blue-900">총 응시자: 0명</div>
+        <button onclick="window.location.href='/api/export/excel'" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg shadow">
+          📊 채점 결과 엑셀 다운로드 (.xlsx)
+        </button>
+      </div>
+      <div class="bg-white p-5 rounded-xl shadow-sm border overflow-x-auto">
+        <table class="w-full text-sm text-center border-collapse">
+          <thead class="bg-slate-100">
+            <tr>
+              <th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th>
+              <th class="p-2 border">A.이해</th><th class="p-2 border">B.진단</th><th class="p-2 border">C.기법</th><th class="p-2 border">D.이론</th><th class="p-2 border">E.정책</th>
+              <th class="p-2 border">총점</th><th class="p-2 border">검수상태</th>
+            </tr>
+          </thead>
+          <tbody id="result-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, threshold: 0.38 };
+    let gradedList = [];
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function showTab(t) {
+      ['home', 'grade', 'result'].forEach(id => {
+        document.getElementById('tab-' + id).classList.toggle('hidden', id !== t);
+        document.getElementById('btn-' + id).className = id === t
+          ? 'px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700'
+          : 'px-5 py-2.5 font-bold text-slate-500';
+      });
+    }
+
+    async function loadConfig() {
+      const res = await fetch('/api/config');
+      currentConfig = await res.json();
+      document.getElementById('cfg-score').value = currentConfig.score_per_q;
+      document.getElementById('cfg-cutoff').value = currentConfig.pass_cutoff;
+      document.getElementById('cfg-th').value = currentConfig.threshold;
+      renderKeySummary();
+    }
+
+    function renderKeySummary() {
+      const box = document.getElementById('key-summary');
+      let html = '<div class="grid grid-cols-5 gap-2">';
+      for (let i = 0; i < 100; i++) {
+        html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${i+1}.</b> A:${currentConfig.answer_keys.A[i]} / B:${currentConfig.answer_keys.B[i]}</div>`;
+      }
+      box.innerHTML = html + '</div>';
+    }
+
+    async function saveConfig() {
+      currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
+      currentConfig.pass_cutoff = parseFloat(document.getElementById('cfg-cutoff').value);
+      currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
+      await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
+      alert('설정이 저장되었습니다.');
+    }
+
+    function downloadSampleKey() {
+      const rows = [];
+      for (let i = 0; i < 100; i++) rows.push({ '문항번호': i + 1, 'A형': currentConfig.answer_keys.A[i], 'B형': currentConfig.answer_keys.B[i] });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '정답지');
+      XLSX.writeFile(wb, 'OCR_정답지_양식샘플.xlsx');
+    }
+
+    function uploadKeyExcel(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        data.forEach((r, idx) => {
+          if (idx < 100) {
+            if (r['A형']) currentConfig.answer_keys.A[idx] = parseInt(r['A형']);
+            if (r['B형']) currentConfig.answer_keys.B[idx] = parseInt(r['B형']);
+          }
+        });
+        await saveConfig();
+        renderKeySummary();
+      };
+      reader.readAsBinaryString(file);
+    }
+
+    async function uploadMasterSheet(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/grade/master', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert(data.exam_type + '형 마스터 정답지 인식 완료!' + (data.problems.length ? '\n무표기/이중마킹 문항(1번으로 임시 설정됨): ' + data.problems.join(', ') : ''));
+        loadConfig();
+      } else {
+        alert('오류: ' + data.message);
+      }
+    }
+
+    async function uploadStudentSheets(e) {
+      const files = Array.from(e.target.files).filter(f => /\.(pdf|png|jpg|jpeg)$/i.test(f.name));
+      e.target.value = '';
+      if (!files.length) return;
+      let done = 0, errors = [];
+      const BATCH = 10;
+      for (let i = 0; i < files.length; i += BATCH) {
+        const fd = new FormData();
+        files.slice(i, i + BATCH).forEach(f => fd.append('files', f));
+        try {
+          const res = await fetch('/api/grade/students', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (data.status === 'success') { done += data.results.length; errors = errors.concat(data.errors || []); }
+          else errors.push(data.message);
+        } catch (err) { errors.push(String(err)); }
+        document.getElementById('result-summary').innerText = `채점 중... ${Math.min(i + BATCH, files.length)}/${files.length}`;
+      }
+      await refreshResults();
+      alert(done + '장 채점 완료' + (errors.length ? '\n\n오류 ' + errors.length + '건:\n' + errors.slice(0, 10).join('\n') : ''));
+    }
+
+    async function refreshResults() {
+      const res = await fetch('/api/results');
+      gradedList = await res.json();
+      document.getElementById('list-count').innerText = gradedList.length;
+      const tbody = document.getElementById('sheet-tbody');
+      const rtbody = document.getElementById('result-tbody');
+      tbody.innerHTML = '';
+      rtbody.innerHTML = '';
+      gradedList.forEach((item, i) => {
+        const badge = item.needs_review ? '<span class="text-red-600 font-bold">⚠️검수필요</span>' : '<span class="text-emerald-600 font-bold">✅정상</span>';
+        tbody.innerHTML += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
+          <td class="p-2">${i+1}</td><td class="p-2 truncate max-w-[120px]">${esc(item.filename)}</td><td class="p-2">${item.exam_type}</td>
+          <td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${badge}</td></tr>`;
+        rtbody.innerHTML += `<tr class="border-b">
+          <td class="p-2">${i+1}</td><td class="p-2">${esc(item.filename)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
+          <td class="p-2">${item.subject_scores.A}</td><td class="p-2">${item.subject_scores.B}</td><td class="p-2">${item.subject_scores.C}</td>
+          <td class="p-2">${item.subject_scores.D}</td><td class="p-2">${item.subject_scores.E}</td><td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${badge}</td></tr>`;
+      });
+      document.getElementById('result-summary').innerText = `총 응시자: ${gradedList.length}명`;
+    }
+
+    function showPreview(url) {
+      const img = document.getElementById('preview-img');
+      img.src = url + '?t=' + Date.now();
+      img.classList.remove('hidden');
+      document.getElementById('preview-empty').classList.add('hidden');
+    }
+
+    async function clearAllResults() {
+      if (!confirm('모든 채점 결과를 삭제할까요?')) return;
+      await fetch('/api/results', { method: 'DELETE' });
+      refreshResults();
+    }
+
+    loadConfig();
+    refreshResults();
+  </script>
+</body>
+</html>
