@@ -23,7 +23,7 @@
   <div class="bg-white border-b px-6 flex gap-2 pt-2">
     <button onclick="showTab('home')" id="btn-home" class="px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>1. 홈 (원본 답안지 & 정답 설정)</button>
     <button onclick="showTab('grade')" id="btn-grade" class="px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>2. 채점 시작 (답안지 추가 & 검수)</button>
-    <button onclick="showTab('result')" id="btn-result" class="px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>3. 결과 확인 (엑셀 .xlsx 다운로드)</button>
+    <button onclick="showTab('result')" id="btn-result" class="px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>3. 결과 확인 / 통계</button>
   </div>
 
   <main class="p-6 max-w-7xl mx-auto w-full flex-1">
@@ -135,13 +135,20 @@
     </section>
 
     <section id="tab-result" class="hidden space-y-4">
-      <div class="bg-white p-5 rounded-xl shadow-sm border flex justify-between items-center">
-        <div id="result-summary" class="font-bold text-blue-900">총 응시자: 0명</div>
-        <button onclick="window.location.href='/api/export/excel'" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg shadow">
-          채점 결과 엑셀 다운로드 (.xlsx)
+      <div class="bg-white p-5 rounded-xl shadow-sm border flex flex-wrap justify-between items-center gap-3">
+        <div>
+          <div id="result-summary" class="font-bold text-blue-900">총 응시자: 0명</div>
+          <div id="scope-radios" class="mt-2 text-sm flex gap-5"></div>
+        </div>
+        <button onclick="downloadExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg shadow">
+          엑셀 다운로드 (결과 + 통계 .xlsx)
         </button>
       </div>
-      <div class="bg-white p-5 rounded-xl shadow-sm border overflow-x-auto">
+      <div class="flex gap-2">
+        <button id="rv-list" onclick="setResultView('list')" class="px-5 py-2 rounded-lg font-bold border">개별 결과</button>
+        <button id="rv-stats" onclick="setResultView('stats')" class="px-5 py-2 rounded-lg font-bold border">통계</button>
+      </div>
+      <div id="res-list" class="bg-white p-5 rounded-xl shadow-sm border overflow-x-auto">
         <table class="w-full text-sm text-center border-collapse">
           <thead class="bg-slate-100">
             <tr>
@@ -153,6 +160,7 @@
           <tbody id="result-tbody"></tbody>
         </table>
       </div>
+      <div id="res-stats" class="hidden space-y-4"></div>
     </section>
   </main>
 
@@ -195,6 +203,7 @@
       document.getElementById('score-info').innerText = `(과목 만점 ${+(v * 20).toFixed(1)}점 · 총점 만점 ${+(v * 100).toFixed(1)}점)`;
     }
     function showTab(t) {
+      if (t === 'result') setTimeout(renderResultTab, 0);
       ['home', 'grade', 'result'].forEach(id => {
         document.getElementById('tab-' + id).classList.toggle('hidden', id !== t);
         document.getElementById('btn-' + id).className = id === t
@@ -215,21 +224,29 @@
     }
 
     function renderKeySummary() {
-      const box = document.getElementById('key-summary');
-      let html = '<div class="grid grid-cols-5 gap-2">';
+      const box = document.getElementById('key-summary'), conf = currentConfig.key_conflicts || [];
+      const confB = conf.map(otherQ);
+      let html = conf.length ? `<div class="mb-2 p-2 rounded bg-red-50 text-red-700 text-xs font-sans">A형과 B형 정답이 서로 맞지 않는 문항이 ${conf.length}개 있습니다. (A형 번호 ${conf.slice(0, 12).join(', ')}${conf.length > 12 ? ' ...' : ''}) 정답을 확인하세요.</div>` : '';
+      html += '<div class="mb-2 text-xs text-slate-500 font-sans">A형 n번은 B형 (n±10)번과 같은 문제입니다 (과목마다 1~10번 / 11~20번 블록 교체). 한쪽 정답만 등록하면 다른 쪽은 자동 생성됩니다.</div><div class="grid grid-cols-5 gap-2">';
       for (let i = 0; i < 100; i++) {
-        html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${i+1}.</b> A:${currentConfig.answer_keys.A[i]} / B:${currentConfig.answer_keys.B[i]}</div>`;
+        const n = i + 1;
+        html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${n}.</b> <span class="${conf.includes(n) ? 'text-red-600 font-bold' : ''}">A:${currentConfig.answer_keys.A[i]}</span> / <span class="${confB.includes(n) ? 'text-red-600 font-bold' : ''}">B:${currentConfig.answer_keys.B[i]}</span></div>`;
       }
       box.innerHTML = html + '</div>';
     }
 
-    async function saveConfig() {
+    const otherQ = q => { const s = Math.floor((q - 1) / 20), i = (q - 1) % 20; return s * 20 + (i + 10) % 20 + 1; };   // A형 n번 = B형 otherQ(n)번 (과목마다 1~10번 / 11~20번 블록 교체)
+    function conflictText(c) { return c && c.length ? `\n\n주의: A형과 B형 정답이 서로 맞지 않는 문항이 ${c.length}개 있습니다. (A형 번호: ${c.slice(0, 15).join(', ')}${c.length > 15 ? ' ...' : ''})\nA형 n번은 B형 (n±10)번과 같은 문제입니다. 정답을 다시 확인하세요.` : ''; }
+    async function saveConfig(keys) {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_average = parseFloat(document.getElementById('cfg-passavg').value);
       currentConfig.subject_fail_cutoff = parseFloat(document.getElementById('cfg-subfail').value) || 0;
       currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
-      await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
-      alert('설정이 저장되었습니다. 이미 채점된 결과도 새 기준으로 다시 판정됩니다.');
+      const body = { score_per_q: currentConfig.score_per_q, pass_average: currentConfig.pass_average, subject_fail_cutoff: currentConfig.subject_fail_cutoff, threshold: currentConfig.threshold };
+      if (keys) body.answer_keys = keys;
+      const r = await (await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })).json();
+      alert(keys ? '정답이 등록되었습니다.' + conflictText(r.key_conflicts) : '설정이 저장되었습니다. 이미 채점된 결과도 새 기준으로 다시 판정됩니다.');
+      await loadConfig();
       refreshResults();
     }
 
@@ -248,14 +265,13 @@
       reader.onload = async (evt) => {
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-        data.forEach((r, idx) => {
-          if (idx < 100) {
-            if (r['A형']) currentConfig.answer_keys.A[idx] = parseInt(r['A형']);
-            if (r['B형']) currentConfig.answer_keys.B[idx] = parseInt(r['B형']);
-          }
+        const keys = {};
+        ['A', 'B'].forEach(t => {
+          const col = data.slice(0, 100).map(r => parseInt(r[t + '형']));
+          if (col.length === 100 && col.every(v => v >= 1 && v <= 5)) keys[t] = col;
         });
-        await saveConfig();
-        renderKeySummary();
+        if (!Object.keys(keys).length) { alert('정답을 읽지 못했습니다. 문항번호/A형/B형 열에 1~5 숫자가 100행 모두 있어야 합니다.'); return; }
+        await saveConfig(keys);
       };
       reader.readAsBinaryString(file);
     }
@@ -268,7 +284,7 @@
       const res = await fetch('/api/grade/master', { method: 'POST', body: fd });
       const data = await res.json();
       if (data.status === 'success') {
-        alert(data.exam_type + '형 마스터 정답지 인식 완료!' + (data.problems.length ? '\n무표기/이중마킹 문항(1번으로 임시 설정됨): ' + data.problems.join(', ') : ''));
+        alert(data.exam_type + '형 정답 답안지 인식 완료!' + (data.derived_other ? '\n다른 유형(' + (data.exam_type === 'A' ? 'B' : 'A') + '형) 정답은 블록 교체 규칙으로 자동 생성했습니다.' : '') + (data.problems.length ? '\n무표기/이중마킹 문항(1번으로 임시 설정됨): ' + data.problems.join(', ') : '') + conflictText(data.conflicts));
         loadConfig();
       } else {
         alert('오류: ' + data.message);
@@ -309,28 +325,142 @@
       const bad = (item.fail_subjects || []).includes(code);
       return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}</td>`;
     }
+    let resultScope = null, resultView = 'list', itemForm = 0, itemSort = 'q', lastStats = null;
+    const isTest = x => !!x.is_test;
+    function currentScope() {
+      if (resultScope) return resultScope;
+      return gradedList.some(x => !isTest(x)) ? 'real' : 'test';
+    }
+    function scopedList() { const sc = currentScope(); return gradedList.filter(x => sc === 'test' ? isTest(x) : !isTest(x)); }
+
     async function refreshResults() {
       const res = await fetch('/api/results');
       gradedList = await res.json();
       document.getElementById('list-count').innerText = gradedList.length;
       const tbody = document.getElementById('sheet-tbody');
-      const rtbody = document.getElementById('result-tbody');
-      let html1 = '', html2 = '';
+      let html1 = '';
       gradedList.forEach((item, i) => {
         const badge = item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>';
         html1 += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left max-w-[140px] break-all">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td>
           <td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
+      });
+      tbody.innerHTML = html1;
+      renderResultTab();
+    }
+
+    function renderResultTab() {
+      const sc = currentScope(), list = scopedList();
+      const nReal = gradedList.filter(x => !isTest(x)).length, nTest = gradedList.length - nReal;
+      document.getElementById('scope-radios').innerHTML =
+        `<label class="cursor-pointer"><input type="radio" name="scope" value="real" ${sc === 'real' ? 'checked' : ''} onchange="setScope('real')"> 실제 응시자 (${nReal}명)</label>` +
+        `<label class="cursor-pointer"><input type="radio" name="scope" value="test" ${sc === 'test' ? 'checked' : ''} onchange="setScope('test')"> 테스트 결과 (${nTest}건)</label>`;
+      let html2 = '';
+      list.forEach((item, i) => {
+        const badge = item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>';
         html2 += `<tr class="border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
           ${['A','B','C','D','E'].map(c => subCell(item, c)).join('')}
           <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${item.average.toFixed(1)}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });
-      tbody.innerHTML = html1; rtbody.innerHTML = html2;
-      const n = r => gradedList.filter(x => x.result === r).length, nt = gradedList.filter(x => x.is_test).length;
-      document.getElementById('result-summary').innerHTML = `총 응시자: ${gradedList.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
-        + (nt ? ` <span class="text-xs font-normal text-violet-600">(테스트 ${nt}건 포함)</span>` : '')
+      document.getElementById('result-tbody').innerHTML = html2;
+      const n = r => list.filter(x => x.result === r).length;
+      document.getElementById('result-summary').innerHTML = `총 응시자: ${list.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
+        + (sc === 'test' ? ' <span class="text-xs font-normal text-violet-600">(테스트 결과)</span>' : '')
         + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 평균 ${currentConfig.pass_average}점 이상 (과목 만점 ${currentConfig.score_per_q * 20} / 총점 만점 ${currentConfig.score_per_q * 100})</div>`;
+      const on = 'bg-blue-700 text-white border-blue-700', off = 'bg-white text-slate-600 border-slate-300';
+      document.getElementById('rv-list').className = 'px-5 py-2 rounded-lg font-bold border ' + (resultView === 'list' ? on : off);
+      document.getElementById('rv-stats').className = 'px-5 py-2 rounded-lg font-bold border ' + (resultView === 'stats' ? on : off);
+      document.getElementById('res-list').classList.toggle('hidden', resultView !== 'list');
+      document.getElementById('res-stats').classList.toggle('hidden', resultView !== 'stats');
+      if (resultView === 'stats') loadStats();
+    }
+    function setScope(v) { resultScope = v; itemForm = 0; renderResultTab(); }
+    function setResultView(v) { resultView = v; renderResultTab(); }
+    function downloadExcel() { window.location.href = '/api/export/excel?scope=' + currentScope(); }
+
+    // ---------- 통계 ----------
+    const FLAG = {key: ['정답키 확인', 'bg-red-100 text-red-700'], hard: ['매우 어려움', 'bg-orange-100 text-orange-700'],
+      easy: ['매우 쉬움', 'bg-sky-100 text-sky-700'], lowdisc: ['변별도 낮음', 'bg-amber-100 text-amber-700'],
+      revdisc: ['역변별', 'bg-red-100 text-red-700'], marking: ['마킹 이상', 'bg-purple-100 text-purple-700']};
+    const LV = {'쉬움': 'bg-emerald-100 text-emerald-700', '보통': 'bg-slate-100 text-slate-700', '어려움': 'bg-red-100 text-red-700'};
+    const f1 = v => v == null ? '-' : Number(v).toFixed(1);
+
+    async function loadStats() {
+      const box = document.getElementById('res-stats');
+      const d = await (await fetch('/api/stats?scope=' + currentScope())).json();
+      lastStats = d;
+      if (!d.n) { box.innerHTML = '<div class="bg-white p-8 rounded-xl border text-center text-slate-500">통계를 낼 채점 결과가 없습니다.</div>'; return; }
+      const sm = d.summary, tmax = d.score_per_q * 100;
+      const card = (t, v, sub) => `<div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">${t}</div><div class="text-2xl font-bold text-blue-900 mt-1">${v}</div><div class="text-xs text-slate-500 mt-1">${sub || '&nbsp;'}</div></div>`;
+      const kr = d.forms.map(f => `${f.label} ${f.kr20 == null ? '-' : f.kr20}`).join(' / ');
+      let h = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        ${card('응시자', sm.n + '명', `검수필요 ${sm.review}건`)}
+        ${card('합격률', f1(sm.pass_rate) + '%', `합격 ${sm.pass} · 불합격 ${sm.fail} · 과락 ${sm.cut}`)}
+        ${card('과락률', f1(sm.cut_rate) + '%', `${sm.cut}명`)}
+        ${card('평균점수 평균', f1(sm.avg_mean), `중앙값 ${f1(sm.avg_median)} · 표준편차 ${f1(sm.avg_sd)}`)}
+        ${card('총점 평균', f1(sm.total_mean), `${tmax}점 만점 · 최고 ${sm.total_max} / 최저 ${sm.total_min}`)}
+        ${card('신뢰도 (KR-20)', kr || '-', d.forms.some(f => f.kr20 != null) ? '1에 가까울수록 일관된 시험' : `유형별 ${d.min_n_item}명 이상부터 계산`)}
+      </div>`;
+      // 분포
+      const mx = Math.max(...d.distribution.map(x => x.count), 1);
+      h += `<div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-3">점수 분포 (평균점수 10점 구간)</h3>` +
+        d.distribution.map(x => `<div class="flex items-center gap-3 text-sm mb-1"><div class="w-16 text-right text-slate-600">${x.label}</div>
+          <div class="flex-1 bg-slate-100 rounded h-5"><div class="bg-blue-600 h-5 rounded" style="width:${x.count / mx * 100}%"></div></div>
+          <div class="w-20 text-slate-700">${x.count}명 <span class="text-xs text-slate-400">(${(x.count / sm.n * 100).toFixed(0)}%)</span></div></div>`).join('') + `</div>`;
+      if (d.key_conflicts && d.key_conflicts.length) h = `<div class="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">A형과 B형 정답이 서로 맞지 않는 문항이 ${d.key_conflicts.length}개 있습니다 (A형 번호 ${d.key_conflicts.slice(0, 15).join(', ')}${d.key_conflicts.length > 15 ? ' ...' : ''}). 같은 문제는 A형 n번 = B형 (n±10)번입니다. 정답 등록을 확인하세요.</div>` + h;
+      // 과목별
+      h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-3">과목별 통계</h3><table class="w-full text-sm text-center border-collapse">
+        <thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">평균 (${d.score_per_q * 20}점 만점)</th><th class="p-2 border">표준편차</th><th class="p-2 border">최고</th><th class="p-2 border">최저</th><th class="p-2 border">정답률</th><th class="p-2 border">난이도</th><th class="p-2 border">과락 인원</th><th class="p-2 border">과락률</th></tr></thead><tbody>` +
+        d.subjects.map(s => `<tr class="border-b"><td class="p-2 text-left font-semibold">${s.code}. ${esc(s.name)}</td><td class="p-2">${f1(s.mean)}</td><td class="p-2">${f1(s.sd)}</td><td class="p-2">${s.max}</td><td class="p-2">${s.min}</td>
+          <td class="p-2 font-bold">${f1(s.correct_rate)}%</td><td class="p-2"><span class="px-2 py-0.5 rounded font-bold ${LV[s.level]}">${s.level}</span></td><td class="p-2 ${s.cut_n ? 'text-red-600 font-bold' : ''}">${s.cut_n}명</td><td class="p-2">${f1(s.cut_rate)}%</td></tr>`).join('') + `</tbody></table></div>`;
+      // 유형별
+      h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-3">문제 유형별 비교</h3><table class="w-full text-sm text-center border-collapse">
+        <thead class="bg-slate-100"><tr><th class="p-2 border">유형</th><th class="p-2 border">응시자</th><th class="p-2 border">총점 평균</th><th class="p-2 border">평균점수 평균</th><th class="p-2 border">합격률</th><th class="p-2 border">과락 인원</th></tr></thead><tbody>` +
+        d.forms_summary.map(f => `<tr class="border-b"><td class="p-2 font-bold">${f.form}형</td><td class="p-2">${f.n}명</td><td class="p-2">${f1(f.total_mean)}</td><td class="p-2">${f1(f.avg_mean)}</td><td class="p-2">${f1(f.pass_rate)}%</td><td class="p-2">${f.cut_n}명</td></tr>`).join('') + `</tbody></table></div>`;
+      if (d.blocks && d.blocks.length) {
+        h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-1">블록 정답률 비교 (같은 문제를 앞/뒤에서 풀었을 때)</h3>
+          <p class="text-xs text-slate-500 mb-3">A형 기준 번호 블록입니다. 같은 문제를 A형 응시자는 앞(또는 뒤)에서, B형 응시자는 반대 위치에서 풉니다. 차이가 크면 문제 순서(피로도 등)의 영향이거나 두 집단의 실력 차이일 수 있습니다.</p>
+          <table class="w-full text-sm text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">A형 번호</th><th class="p-2 border">A형 응시자 정답률</th><th class="p-2 border">B형 응시자 정답률</th><th class="p-2 border">차이 (B-A)</th></tr></thead><tbody>` +
+          d.blocks.map(b => `<tr class="border-b"><td class="p-2">${b.subject}</td><td class="p-2">${b.block}</td><td class="p-2">${f1(b.a_rate)}%</td><td class="p-2">${f1(b.b_rate)}%</td><td class="p-2 ${b.diff != null && Math.abs(b.diff) >= 15 ? 'text-red-600 font-bold' : ''}">${b.diff == null ? '-' : (b.diff > 0 ? '+' : '') + f1(b.diff) + '%p'}</td></tr>`).join('') + `</tbody></table></div>`;
+      }
+      // 문항 분석
+      h += `<div class="bg-white border rounded-xl p-5"><div class="flex flex-wrap items-center gap-3 mb-3"><h3 class="font-bold">문항 분석</h3>
+        <select id="item-form" onchange="itemForm = +this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm">${d.forms.map((f, i) => `<option value="${i}" ${i === itemForm ? 'selected' : ''}>${esc(f.label)} (${f.n}명)</option>`).join('')}</select>
+        <select id="item-sort" onchange="itemSort = this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm">
+          <option value="q">문항 번호순</option><option value="wrong">오답률 높은 순</option><option value="disc">변별도 낮은 순</option><option value="flag">검토 필요 먼저</option></select>
+        <span id="item-note" class="text-xs text-slate-500"></span></div>
+        <div class="overflow-x-auto max-h-[560px] overflow-y-auto"><table class="w-full text-xs text-center border-collapse">
+        <thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border">문항</th><th class="p-2 border" title="다른 유형에서 같은 문제의 번호">대응 번호</th><th class="p-2 border">과목</th><th class="p-2 border">정답</th><th class="p-2 border">정답률</th><th class="p-2 border">오답률</th>
+        <th class="p-2 border">1번</th><th class="p-2 border">2번</th><th class="p-2 border">3번</th><th class="p-2 border">4번</th><th class="p-2 border">5번</th><th class="p-2 border">무표기</th><th class="p-2 border">이중</th><th class="p-2 border">변별도</th><th class="p-2 border">검토</th></tr></thead>
+        <tbody id="item-tbody"></tbody></table></div>
+        <details class="mt-3 text-xs text-slate-600"><summary class="cursor-pointer font-semibold">용어 설명</summary><ul class="list-disc ml-5 mt-2 space-y-1">
+          <li><b>정답률</b>: 맞힌 응시자 비율. 80% 이상 쉬움, 40~80% 보통, 40% 미만 어려움.</li>
+          <li><b>변별도</b>: 총점 상위 27% 집단의 정답률에서 하위 27% 집단의 정답률을 뺀 값. 0.3 이상이면 좋고 0.2 미만이면 낮으며, 음수면 잘하는 사람이 오히려 더 틀린 문항입니다.</li>
+          <li><b>정답키 확인</b>: 정답 번호보다 다른 오답 번호를 더 많이 선택한 문항. 정답키 입력 오류나 문항 오류를 의심해 보세요.</li>
+          <li><b>마킹 이상</b>: 무표기와 이중마킹이 합쳐 10% 이상인 문항.</li>
+          <li><b>KR-20 신뢰도</b>: 시험이 일관되게 능력을 재는 정도(0~1). 0.8 이상이면 양호합니다.</li>
+          <li>문항 분석은 유형(A/B)별로 따로 계산하고, 유형별 응시자가 ${d.min_n_item}명 미만이면 변별도·검토 표시는 보류합니다.</li></ul></details></div>`;
+      document.getElementById('res-stats').innerHTML = h;
+      document.getElementById('item-sort').value = itemSort;
+      renderItemTable();
+    }
+
+    function renderItemTable() {
+      const f = lastStats.forms[Math.min(itemForm, lastStats.forms.length - 1)];
+      let rows = f.items.slice();
+      if (itemSort === 'wrong') rows.sort((a, b) => b.wrong_rate - a.wrong_rate || a.q - b.q);
+      else if (itemSort === 'disc') rows.sort((a, b) => (a.disc ?? 9) - (b.disc ?? 9) || a.q - b.q);
+      else if (itemSort === 'flag') rows.sort((a, b) => b.flags.length - a.flags.length || a.q - b.q);
+      document.getElementById('item-note').innerText = f.enough ? `응시자 ${f.n}명` : `응시자 ${f.n}명 (${lastStats.min_n_item}명 미만이라 변별도·검토 표시 보류, 참고용)`;
+      document.getElementById('item-tbody').innerHTML = rows.map(it => {
+        const ch = c => { const v = it.choices[c], right = String(it.answer) === c;
+          return `<td class="p-1.5 border ${right ? 'bg-emerald-50 font-bold text-emerald-700' : (v >= 25 ? 'bg-red-50 text-red-700 font-bold' : '')}">${f1(v)}</td>`; };
+        const flags = it.flags.map(x => `<span class="px-1.5 py-0.5 rounded font-bold ${FLAG[x][1]}">${FLAG[x][0]}</span>`).join(' ');
+        return `<tr class="${it.flags.length ? 'bg-amber-50/50' : ''}"><td class="p-1.5 border font-bold">${it.q}</td><td class="p-1.5 border text-slate-500">${it.alt_q}</td><td class="p-1.5 border">${it.subject}</td><td class="p-1.5 border font-bold">${it.answer}</td>
+          <td class="p-1.5 border font-bold">${f1(it.correct_rate)}%</td><td class="p-1.5 border">${f1(it.wrong_rate)}%</td>
+          ${['1','2','3','4','5','무표기','이중'].map(ch).join('')}<td class="p-1.5 border">${it.disc == null ? '-' : it.disc.toFixed(2)}</td><td class="p-1.5 border text-left">${flags}</td></tr>`;
+      }).join('');
     }
 
     async function loadTestInfo() {

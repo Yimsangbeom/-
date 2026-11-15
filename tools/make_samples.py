@@ -6,6 +6,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from omr_engine import DEFAULT_CONFIG as C, load_pages_from_file  # noqa: E402
+from form_map import derive_key  # noqa: E402
 
 
 def fill(img, x, y, rng, gray=35, r=11.5):
@@ -57,7 +58,9 @@ def make_all(form_pdf, outdir, seed=7):
     os.makedirs(outdir, exist_ok=True)
     rng = random.Random(seed)
     (_, blank), = load_pages_from_file(form_pdf)
-    keys = {"A": [rng.randint(1, 5) for _ in range(100)], "B": [rng.randint(1, 5) for _ in range(100)]}
+    keys = {"A": [rng.randint(1, 5) for _ in range(100)]}
+    [rng.randint(1, 5) for _ in range(100)]          # (이전 샘플과 같은 난수 흐름을 유지하기 위한 소비)
+    keys["B"] = derive_key(keys["A"])                # B형 정답 = A형 정답을 블록 교체 규칙으로 변환
 
     def marks_from(key, wrong=0, doubles=(), blanks=()):
         mk = {q: [key[q - 1]] for q in range(1, 101)}

@@ -9,6 +9,8 @@ import pandas as pd
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
 import auth
+import stats
+from form_map import derive_key, key_conflicts
 from omr_engine import OMREngine, DEFAULT_CONFIG, load_pages_from_file
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +40,7 @@ state = {
     "subject_fail_cutoff": 40.0,  # 과락 점수: 한 과목이라도 이 점수 미만이면 과락(0=사용 안 함)
     "schema": 3,
     "threshold": 0.65,
+    "keys_set": {"A": False, "B": False},   # 실제로 등록된 정답인지(기본 임시값 구분). 한쪽만 등록하면 다른 쪽은 블록 교체 규칙으로 자동 생성
 }
 graded_results = []
 next_id = 0
@@ -75,10 +78,34 @@ def load_all():
             data = json.load(f)
             graded_results = data.get("results", [])
             next_id = data.get("next_id", len(graded_results))
+    default_keys = {"A": [(i % 5) + 1 for i in range(100)], "B": [((i + 2) % 5) + 1 for i in range(100)]}
+    for t in "AB":   # 이전 버전에서 이미 등록해 둔 정답은 '등록됨'으로 간주
+        if state["answer_keys"][t] != default_keys[t]:
+            state["keys_set"][t] = True
     engine.fill_threshold = float(state["threshold"])
 
 
 load_all()
+
+
+def current_conflicts():
+    """두 유형 정답이 모두 등록된 경우, A형 번호 기준으로 서로 다른 문항 목록."""
+    if state["keys_set"]["A"] and state["keys_set"]["B"]:
+        return key_conflicts(state["answer_keys"]["A"], state["answer_keys"]["B"])
+    return []
+
+
+def register_key(form, key):
+    """정답 등록. 다른 유형이 미등록이면 블록 교체 규칙으로 자동 생성하고, 이미 등록돼 있으면 서로 일치하는지 검사."""
+    other = "B" if form == "A" else "A"
+    state["answer_keys"][form] = [int(x) for x in key][:100]
+    state["keys_set"][form] = True
+    derived = False
+    if not state["keys_set"][other]:
+        state["answer_keys"][other] = derive_key(state["answer_keys"][form])
+        state["keys_set"][other] = True
+        derived = True
+    return {"derived_other": derived, "conflicts": current_conflicts()}
 
 
 def save_upload(file_storage):
@@ -109,7 +136,7 @@ def judge(item):
     return ("불합격" if item["total_score"] / 5 < state["pass_average"] else "합격"), []
 
 
-def make_result(res, page_label, is_test=False, verify=None):
+def make_result(res, page_label, is_test=False, verify=None, keys=None):
     """채점 결과를 저장용 dict 로 만들고 판독 이미지를 저장한다. (lock 안에서 호출)"""
     global next_id
     rid = next_id
@@ -130,6 +157,8 @@ def make_result(res, page_label, is_test=False, verify=None):
         "vis_url": f"/results/{vis_name}",
         "is_test": is_test,
     }
+    if keys is not None:   # 채점에 쓰인 정답을 함께 저장 (나중에 정답을 바꿔도 문항 통계가 흔들리지 않게)
+        item["key_used"] = [int(x) for x in keys.get(res["exam_type"], keys.get("A", [1] * 100))]
     if verify is not None:
         item["verify"] = verify
     return item
@@ -153,13 +182,16 @@ def result_image(name):
 def handle_config():
     with lock:
         if request.method == "GET":
-            return jsonify({**state})
+            return jsonify({**state, "key_conflicts": current_conflicts()})
         data = request.get_json(force=True) or {}
         if "answer_keys" in data:
             keys = data["answer_keys"]
             for t in ("A", "B"):
                 if t in keys:
-                    state["answer_keys"][t] = [int(x) for x in keys[t]][:100]
+                    register_key(t, keys[t])
+            if "A" in keys and "B" in keys:     # 둘 다 직접 준 경우에는 자동 생성 없이 입력값 그대로
+                state["answer_keys"]["A"] = [int(x) for x in keys["A"]][:100]
+                state["answer_keys"]["B"] = [int(x) for x in keys["B"]][:100]
         if "score_per_q" in data:
             state["score_per_q"] = float(data["score_per_q"])
         if "pass_average" in data:
@@ -170,7 +202,7 @@ def handle_config():
             state["threshold"] = float(data["threshold"])
             engine.fill_threshold = state["threshold"]
         save_state()
-        return jsonify({"status": "success", "message": "설정이 업데이트되었습니다."})
+        return jsonify({"status": "success", "message": "설정이 업데이트되었습니다.", "key_conflicts": current_conflicts()})
 
 
 @app.route("/api/grade/master", methods=["POST"])
@@ -197,10 +229,10 @@ def grade_master():
             if len(problems) > 10:
                 return jsonify({"status": "error",
                                 "message": f"인식 실패 문항이 {len(problems)}개입니다. 스캔 품질/민감도를 확인하세요."}), 422
-            state["answer_keys"][t_code] = extracted
+            info = register_key(t_code, extracted)
             save_state()
         return jsonify({"status": "success", "exam_type": t_code, "answers": extracted,
-                        "problems": problems})
+                        "problems": problems, **info})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
@@ -226,7 +258,8 @@ def grade_students():
                 with lock:
                     res = engine.grade_sheet(img_bgr, state["answer_keys"], 1.0)
                     # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
-                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown)))
+                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown),
+                                                   keys=state["answer_keys"]))
         except Exception as e:
             errors.append(f"{shown}: {e}")
         finally:
@@ -297,22 +330,69 @@ def test_run():
                 if exp:
                     ok = sum(res["student_answers"].get(int(q)) == a for q, a in exp["answers"].items())
                     verify = {"match": ok, "total": 100, "expected_correct": exp["score"], "desc": exp["desc"]}
-                new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify))
+                new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify, keys=meta["keys"]))
         graded_results = [r for r in graded_results if not r.get("is_test")] + new   # 이전 테스트 결과는 교체
         save_results()
     return jsonify({"status": "success", "results": [with_judge(r) for r in new]})
 
 
+def scoped(scope):
+    if scope == "test":
+        return [r for r in graded_results if r.get("is_test")]
+    if scope == "real":
+        return [r for r in graded_results if not r.get("is_test")]
+    return list(graded_results)
+
+
+_truth_keys = {}
+
+
+def item_key(item):
+    """문항 통계용 정답. 저장된 key_used 우선, 없으면(이전 버전 결과) 현재 정답 설정/테스트 정답으로 대체."""
+    if item.get("key_used"):
+        return item["key_used"]
+    if item.get("is_test"):
+        if not _truth_keys:
+            with open(os.path.join(SAMPLE_DIR, "truth.json"), encoding="utf-8") as f:
+                _truth_keys.update(json.load(f)["keys"])
+        keys = _truth_keys
+    else:
+        keys = state["answer_keys"]
+    return [int(x) for x in keys.get(item["exam_type"], keys.get("A", [1] * 100))]
+
+
+def stats_items(scope):
+    return [{**with_judge(r), "_key": item_key(r)} for r in scoped(scope)]
+
+
+@app.route("/api/stats")
+def api_stats():
+    scope = request.args.get("scope", "real")
+    with lock:
+        data = stats.compute(stats_items(scope), state["score_per_q"])
+        data["scope"] = scope
+        data["counts"] = {"real": len(scoped("real")), "test": len(scoped("test"))}
+        data["score_per_q"] = state["score_per_q"]
+    return jsonify(data)
+
+
+FLAG_TEXT = {"key": "정답키 확인", "hard": "매우 어려움", "easy": "매우 쉬움", "lowdisc": "변별도 낮음",
+             "revdisc": "역변별", "marking": "마킹 이상"}
+
+
 @app.route("/api/export/excel", methods=["GET"])
 def export_excel():
+    scope = request.args.get("scope", "all")
     with lock:
-        if not graded_results:
+        base = scoped(scope)
+        if not base:
             return jsonify({"status": "error", "message": "채점 결과가 없습니다."}), 400
         spq = state["score_per_q"]
         smax, tmax = 20 * spq, 100 * spq
+        judged = [with_judge(r) for r in base]
+        totals = [x["total_score"] for x in judged]
         rows, detail = [], []
-        for raw in graded_results:
-            item = with_judge(raw)
+        for item in judged:
             ss = item["subject_scores"]
             rows.append({
                 "구분": "테스트" if item.get("is_test") else "",
@@ -327,6 +407,7 @@ def export_excel():
                 f"E.정책과 법({smax:g})": ss["E"],
                 f"총점({tmax:g})": item["total_score"],
                 "평균": item["average"],
+                "석차": 1 + sum(1 for t in totals if t > item["total_score"]),
                 "판정": item["result"],
                 "과락과목": ",".join(item["fail_subjects"]),
                 "무표기": item["blank_count"],
@@ -338,11 +419,46 @@ def export_excel():
             for q in range(1, 101):
                 d[str(q)] = sa.get(str(q), "")
             detail.append(d)
+        # 통계 시트 (범위가 all 이면 실제 응시자 우선, 없으면 테스트)
+        st_scope = scope if scope in ("real", "test") else ("real" if scoped("real") else "test")
+        st = stats.compute(stats_items(st_scope), spq)
 
+    sm = st["summary"]
+    summary_df = pd.DataFrame([
+        ("통계 대상", "실제 응시자" if st_scope == "real" else "테스트 결과"),
+        ("응시자 수", sm["n"]), ("합격", sm["pass"]), ("불합격", sm["fail"]), ("과락", sm["cut"]),
+        ("합격률(%)", sm["pass_rate"]), ("과락률(%)", sm["cut_rate"]),
+        (f"총점 평균({tmax:g}점 만점)", sm["total_mean"]), ("총점 중앙값", sm["total_median"]), ("총점 표준편차", sm["total_sd"]),
+        ("총점 최고", sm["total_max"]), ("총점 최저", sm["total_min"]),
+        ("평균점수 평균(100점 만점)", sm["avg_mean"]), ("평균점수 표준편차", sm["avg_sd"]),
+        ("검수필요 건수", sm["review"]), ("무표기 문항 합계", sm["blank_total"]), ("이중마킹 문항 합계", sm["multi_total"]),
+    ], columns=["항목", "값"])
+    dist_df = pd.DataFrame([{"평균점수 구간": d["label"], "인원": d["count"]} for d in st["distribution"]])
+    subj_df = pd.DataFrame([{"과목": f'{s["code"]}.{s["name"]}', f"평균({smax:g}점 만점)": s["mean"], "표준편차": s["sd"],
+                             "최고": s["max"], "최저": s["min"], "정답률(%)": s["correct_rate"], "난이도": s["level"],
+                             "과락 인원": s["cut_n"], "과락률(%)": s["cut_rate"]} for s in st["subjects"]])
+    form_df = pd.DataFrame([{"유형": f["form"], "응시자": f["n"], f"총점 평균({tmax:g})": f["total_mean"],
+                             "평균점수 평균": f["avg_mean"], "합격률(%)": f["pass_rate"], "과락 인원": f["cut_n"]}
+                            for f in st["forms_summary"]])
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         pd.DataFrame(rows).to_excel(writer, sheet_name="성적총괄표", index=False)
         pd.DataFrame(detail).to_excel(writer, sheet_name="문항별답안", index=False)
+        summary_df.to_excel(writer, sheet_name="통계요약", index=False)
+        dist_df.to_excel(writer, sheet_name="점수분포", index=False)
+        subj_df.to_excel(writer, sheet_name="과목별통계", index=False)
+        form_df.to_excel(writer, sheet_name="유형별통계", index=False)
+        for fm in st["forms"]:
+            items_df = pd.DataFrame([{
+                "문항": it["q"], "과목": it["subject"], "정답": it["answer"], "정답률(%)": it["correct_rate"],
+                "오답률(%)": it["wrong_rate"], "1번(%)": it["choices"]["1"], "2번(%)": it["choices"]["2"],
+                "3번(%)": it["choices"]["3"], "4번(%)": it["choices"]["4"], "5번(%)": it["choices"]["5"],
+                "무표기(%)": it["choices"]["무표기"], "이중(%)": it["choices"]["이중"],
+                "최다 오답": it["top_wrong"], "최다 오답(%)": it["top_wrong_rate"],
+                "변별도": it["disc"], "검토": ", ".join(FLAG_TEXT[f] for f in it["flags"]),
+            } for it in fm["items"]])
+            name = "문항분석_" + fm["label"].replace(" ", "").replace("(", "").replace(")", "")[:20]
+            items_df.to_excel(writer, sheet_name=name, index=False)
     output.seek(0)
     return send_file(
         output,

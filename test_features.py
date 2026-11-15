@@ -1,5 +1,6 @@
 """내장 가상 답안지(static/samples)로 테스트 실행/판정/과락/삭제 기능을 검증한다. (양식 PDF 불필요)"""
-import os, sys, tempfile
+import io, os, sys, tempfile
+import pandas as pd
 os.environ["OMR_DATA_DIR"] = tempfile.mkdtemp()
 from app import app, state
 
@@ -47,8 +48,31 @@ c.post("/api/config", json={"score_per_q": 2.5}); assert results()[0]["total_sco
 c.post("/api/config", json={"score_per_q": 5})
 print("판정/과락/배점 OK")
 
+# 통계 API: 범위(scope) 구분, 문항 분석은 유형별, 엑셀에 통계 시트 포함
+st = c.get("/api/stats?scope=test").get_json()
+assert st["n"] == 5 and st["counts"] == {"real": 0, "test": 5} and st["summary"]["cut"] == 1
+assert [f["label"][:2] for f in st["forms"]] == ["통합", "A형", "B형"] and all(not f["enough"] for f in st["forms"])  # 소수 인원: 판정 보류
+assert st["key_conflicts"] == [] and len(st["blocks"]) == 10
+assert c.get("/api/stats?scope=real").get_json() == {"n": 0, "scope": "real", "counts": {"real": 0, "test": 5}, "score_per_q": 5.0}
+xl = pd.ExcelFile(io.BytesIO(c.get("/api/export/excel?scope=test").data))
+assert {"성적총괄표", "문항별답안", "통계요약", "점수분포", "과목별통계", "유형별통계"} <= set(xl.sheet_names) and any(n.startswith("문항분석_") for n in xl.sheet_names), xl.sheet_names
+assert "석차" in pd.read_excel(xl, "성적총괄표").columns
+print("통계 API/엑셀 OK")
+
+# 정답 등록: 한쪽만 주면 다른 쪽은 블록 교체 규칙으로 자동 생성, 둘 다 주면 불일치 검증
+from form_map import derive_key
+import random as _r
+_r.seed(5); kA = [_r.randint(1, 5) for _ in range(100)]
+c.post("/api/config", json={"answer_keys": {"A": kA}}); cfg = c.get("/api/config").get_json()
+assert cfg["answer_keys"]["A"] == kA and cfg["answer_keys"]["B"] == derive_key(kA) and cfg["key_conflicts"] == []
+assert cfg["answer_keys"]["B"][0] == kA[10] and cfg["answer_keys"]["B"][10] == kA[0] and cfg["answer_keys"]["B"][20] == kA[30]   # A 11번=B 1번, A 1번=B 11번, 과목 경계 유지
+kB = derive_key(kA); kB[4] = kB[4] % 5 + 1                                  # B형 5번(=A형 15번)만 틀리게
+r = c.post("/api/config", json={"answer_keys": {"A": kA, "B": kB}}).get_json()
+assert r["key_conflicts"] == [15] and c.get("/api/config").get_json()["key_conflicts"] == [15]
+c.post("/api/config", json={"answer_keys": {"B": derive_key(kA)}}); assert c.get("/api/config").get_json()["key_conflicts"] == []
+print("정답 자동 연결/교차 검증 OK")
+
 # 엑셀에 판정·과락 컬럼 / 테스트 구분
-import io, pandas as pd
 x = pd.read_excel(io.BytesIO(c.get("/api/export/excel").data), sheet_name="성적총괄표")
 assert {"구분", "판정"} <= set(x.columns) and (x["구분"] == "테스트").all()
 

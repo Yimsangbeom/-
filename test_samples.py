@@ -15,6 +15,10 @@ assert c.post("/api/setup", json={"password": "testpass123"}).status_code == 200
 for t in "AB":   # 정답지 인식
     j = c.post("/api/grade/master", data={"file": (open(f"{out}/master_{t}.jpg", "rb"), f"master_{t}.jpg")}).get_json()
     assert j["status"] == "success" and j["exam_type"] == t, j
+    if t == "A":
+        assert j["derived_other"] is True and j["conflicts"] == [], j     # A형만 등록해도 B형 정답이 자동 생성됨
+    else:
+        assert j["derived_other"] is False and j["conflicts"] == [], j    # B형 정답지도 올리면 A형과 일치 검증(불일치 없음)
     ok = sum(a == b for a, b in zip(j["answers"], keys[t]))
     print(f"마스터 {t}형 인식: {ok}/100 일치, 문제문항={j['problems']}")
     assert ok == 100
