@@ -41,12 +41,16 @@
             <input id="cfg-score" type="number" value="1" step="0.5" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">합격 기준 총점</label>
+            <label class="font-semibold text-sm">합격 총점 <span class="text-xs font-normal text-slate-500">(총점이 이 점수 이상이면 합격)</span></label>
             <input id="cfg-cutoff" type="number" value="60" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">마킹 인식 민감도 (0.40~0.65, 기본 0.5)</label>
-            <input id="cfg-th" type="number" value="0.5" step="0.02" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(과목별 이 점수 미만이면 과락·불합격, 0=사용 안 함)</span></label>
+            <input id="cfg-subcut" type="number" value="8" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+          </div>
+          <div class="flex justify-between items-center">
+            <label class="font-semibold text-sm">마킹 인식 민감도 (0.50~0.85, 기본 0.65)</label>
+            <input id="cfg-th" type="number" value="0.65" step="0.05" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <button onclick="saveConfig()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg">설정 저장하기</button>
         </div>
@@ -65,6 +69,19 @@
         </div>
         <p class="text-xs text-slate-500 mb-3">※ [2. 채점 시작] 탭에서 정답이 마킹된 PDF/이미지를 올려 자동 인식시킬 수도 있습니다.</p>
         <div id="key-summary" class="text-sm bg-slate-50 p-4 rounded border flex-1 overflow-y-auto max-h-64 font-mono"></div>
+      </div>
+
+      <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+        <h2 class="text-lg font-bold mb-1">🧪 테스트용 가상 답안지</h2>
+        <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 🧪 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
+        <div class="flex flex-wrap gap-2 mb-4">
+          <button onclick="runTest()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-lg">▶ 테스트 실행 (가상 답안지 4장 자동 채점)</button>
+          <button onclick="clearTest()" class="bg-slate-400 hover:bg-slate-500 text-white font-bold px-5 py-2.5 rounded-lg">🗑️ 테스트 결과만 삭제</button>
+        </div>
+        <div class="text-sm font-semibold mb-2">가상 답안지 파일 (클릭하면 원본을 볼 수 있습니다)</div>
+        <ul id="test-files" class="text-sm space-y-1 text-slate-700"></ul>
+        <div class="text-sm font-semibold mt-4 mb-2">준비된 가상 수험생 (정답 기록)</div>
+        <table class="w-full text-xs text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">수험번호</th><th class="p-2 border">유형</th><th class="p-2 border">기대 점수</th><th class="p-2 border text-left">내용</th></tr></thead><tbody id="test-students"></tbody></table>
       </div>
     </section>
 
@@ -100,7 +117,7 @@
           <div class="flex-1 overflow-y-auto">
             <table class="w-full text-xs text-center border-collapse">
               <thead class="bg-slate-100 sticky top-0">
-                <tr><th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th><th class="p-2 border">총점</th><th class="p-2 border">상태</th></tr>
+                <tr><th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th><th class="p-2 border">총점</th><th class="p-2 border">판정</th><th class="p-2 border">상태</th></tr>
               </thead>
               <tbody id="sheet-tbody"></tbody>
             </table>
@@ -130,7 +147,7 @@
             <tr>
               <th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th>
               <th class="p-2 border">A.이해</th><th class="p-2 border">B.진단</th><th class="p-2 border">C.기법</th><th class="p-2 border">D.이론</th><th class="p-2 border">E.정책</th>
-              <th class="p-2 border">총점</th><th class="p-2 border">검수상태</th>
+              <th class="p-2 border">총점</th><th class="p-2 border">판정</th><th class="p-2 border">검수상태</th>
             </tr>
           </thead>
           <tbody id="result-tbody"></tbody>
@@ -169,7 +186,7 @@
     }
     async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
 
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, threshold: 0.5 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, subject_cutoff: 8, threshold: 0.65 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -187,6 +204,7 @@
       currentConfig = await res.json();
       document.getElementById('cfg-score').value = currentConfig.score_per_q;
       document.getElementById('cfg-cutoff').value = currentConfig.pass_cutoff;
+      document.getElementById('cfg-subcut').value = currentConfig.subject_cutoff;
       document.getElementById('cfg-th').value = currentConfig.threshold;
       renderKeySummary();
     }
@@ -203,9 +221,11 @@
     async function saveConfig() {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_cutoff = parseFloat(document.getElementById('cfg-cutoff').value);
+      currentConfig.subject_cutoff = parseFloat(document.getElementById('cfg-subcut').value) || 0;
       currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
       await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
-      alert('설정이 저장되었습니다.');
+      alert('설정이 저장되었습니다. 이미 채점된 결과도 새 기준으로 다시 판정됩니다.');
+      refreshResults();
     }
 
     function downloadSampleKey() {
@@ -271,25 +291,59 @@
       alert(done + '장 채점 완료' + (errors.length ? '\n\n오류 ' + errors.length + '건:\n' + errors.slice(0, 10).join('\n') : ''));
     }
 
+    function judgeBadge(item) {
+      const c = {'합격': 'bg-emerald-100 text-emerald-700', '불합격': 'bg-slate-200 text-slate-700', '과락': 'bg-red-100 text-red-700'}[item.result] || '';
+      return `<span class="px-2 py-0.5 rounded font-bold ${c}">${item.result}</span>`;
+    }
+    function nameCell(item) {
+      const t = item.is_test ? '<span class="text-violet-600 font-bold">🧪</span> ' : '';
+      const v = item.verify ? `<div class="text-[10px] text-violet-600">정답기록 대비 인식 ${item.verify.match}/${item.verify.total} 일치</div>` : '';
+      return t + esc(item.filename) + v;
+    }
+    function subCell(item, code) {
+      const bad = (item.fail_subjects || []).includes(code);
+      return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}${bad ? ' ⚠' : ''}</td>`;
+    }
     async function refreshResults() {
       const res = await fetch('/api/results');
       gradedList = await res.json();
       document.getElementById('list-count').innerText = gradedList.length;
       const tbody = document.getElementById('sheet-tbody');
       const rtbody = document.getElementById('result-tbody');
-      tbody.innerHTML = '';
-      rtbody.innerHTML = '';
+      let html1 = '', html2 = '';
       gradedList.forEach((item, i) => {
         const badge = item.needs_review ? '<span class="text-red-600 font-bold">⚠️검수필요</span>' : '<span class="text-emerald-600 font-bold">✅정상</span>';
-        tbody.innerHTML += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
-          <td class="p-2">${i+1}</td><td class="p-2 truncate max-w-[120px]">${esc(item.filename)}</td><td class="p-2">${item.exam_type}</td>
-          <td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${badge}</td></tr>`;
-        rtbody.innerHTML += `<tr class="border-b">
-          <td class="p-2">${i+1}</td><td class="p-2">${esc(item.filename)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
-          <td class="p-2">${item.subject_scores.A}</td><td class="p-2">${item.subject_scores.B}</td><td class="p-2">${item.subject_scores.C}</td>
-          <td class="p-2">${item.subject_scores.D}</td><td class="p-2">${item.subject_scores.E}</td><td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${badge}</td></tr>`;
+        html1 += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
+          <td class="p-2">${i+1}</td><td class="p-2 text-left max-w-[140px] break-all">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td>
+          <td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
+        html2 += `<tr class="border-b">
+          <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
+          ${['A','B','C','D','E'].map(c => subCell(item, c)).join('')}
+          <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });
-      document.getElementById('result-summary').innerText = `총 응시자: ${gradedList.length}명`;
+      tbody.innerHTML = html1; rtbody.innerHTML = html2;
+      const n = r => gradedList.filter(x => x.result === r).length, nt = gradedList.filter(x => x.is_test).length;
+      document.getElementById('result-summary').innerHTML = `총 응시자: ${gradedList.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
+        + (nt ? ` <span class="text-xs font-normal text-violet-600">(🧪 테스트 ${nt}건 포함)</span>` : '')
+        + `<div class="text-xs font-normal text-slate-500">합격 총점 ${currentConfig.pass_cutoff}점 이상, 과목별 ${currentConfig.subject_cutoff}점 미만은 과락</div>`;
+    }
+
+    async function loadTestInfo() {
+      const d = await (await fetch('/api/test/info')).json();
+      document.getElementById('test-files').innerHTML = d.files.map(f => `<li>📄 <a class="text-blue-700 underline" href="/samples/${f.file}" target="_blank">${f.file}</a> <span class="text-slate-500">— ${esc(f.desc)}</span></li>`).join('');
+      document.getElementById('test-students').innerHTML = d.students.map(s => `<tr class="border-b"><td class="p-2 font-mono">${s.student_id}</td><td class="p-2">${s.exam_type}</td><td class="p-2 font-bold">${s.expected_score}</td><td class="p-2 text-left">${esc(s.desc)}</td></tr>`).join('');
+    }
+    async function runTest() {
+      const r = await fetch('/api/test/run', { method: 'POST' });
+      const d = await r.json();
+      await refreshResults();
+      showTab('grade');
+      const ok = d.results.filter(x => x.verify && x.verify.match === 100).length;
+      alert(`테스트 완료: 가상 답안지 ${d.results.length}장 채점, 정답 기록과 100% 일치 ${ok}장.\n[2. 채점 시작] 탭의 목록에서 🧪 항목을 눌러 판독 화면을 확인하세요.`);
+    }
+    async function clearTest() {
+      await fetch('/api/results?scope=test', { method: 'DELETE' });
+      refreshResults();
     }
 
     function showPreview(url) {
@@ -305,8 +359,8 @@
       refreshResults();
     }
 
-    loadConfig();
-    refreshResults();
+    loadConfig().then(refreshResults);
+    loadTestInfo();
   </script>
 </body>
 </html>

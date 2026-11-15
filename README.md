@@ -14,7 +14,16 @@
 ## 자동 시작 (재부팅 후에도)
 `schtasks /create /tn OCR_Score_Server /tr "D:\OCR_Score_app\start_server.bat" /sc onstart /ru SYSTEM /rl highest /f`
 
+## 합격 / 과락 판정
+- 홈 화면의 **합격 총점**(이상이면 합격)과 **과락 점수**(과목별 이 점수 미만이면 과락·불합격, 0=사용 안 함, 기본 8점=20점의 40%)로 판정
+- 과락이 불합격보다 우선하며, 설정을 바꾸면 이미 채점된 결과도 즉시 다시 판정됨 (엑셀에도 판정/과락과목 포함)
+
+## 테스트용 가상 답안지
+- 홈 화면 [▶ 테스트 실행]: `static/samples/` 의 가상 스캔 답안지 4장을 채점하고 정답 기록과 대조(🧪 표시, 실제 정답 설정은 변경 안 됨), [테스트 결과만 삭제]로 정리
+- 재생성: `python tools/make_samples.py <양식.pdf> static/samples`
+
 ## 테스트
+- `python test_features.py` (내장 샘플: 테스트 실행/판정/과락/삭제), `python test_samples.py <양식.pdf>` (스캔 열화 샘플 정확도)
 `python test_synthetic.py` — 합성 답안지로 인식/채점/엑셀/보안 검증
 
 ## 데이터

@@ -34,8 +34,9 @@ state = {
         "B": [((i + 2) % 5) + 1 for i in range(100)],
     },
     "score_per_q": 1.0,
-    "pass_cutoff": 60.0,
-    "threshold": 0.50,
+    "pass_cutoff": 60.0,      # 합격 총점(이상이면 합격)
+    "subject_cutoff": 8.0,    # 과목별 과락 점수(미만이면 과락, 0=사용 안 함). 20점 만점의 40%
+    "threshold": 0.65,
 }
 graded_results = []
 next_id = 0
@@ -75,6 +76,49 @@ def save_upload(file_storage):
     return path
 
 
+SUBJECT_CODES = ("A", "B", "C", "D", "E")
+
+
+def judge(item):
+    """현재 설정(합격 총점/과락 점수)으로 판정. 설정을 바꾸면 이미 채점된 결과도 즉시 다시 판정된다."""
+    cut = state["subject_cutoff"]
+    fails = [c for c in SUBJECT_CODES if cut > 0 and item["subject_scores"].get(c, 0) < cut]
+    if fails:
+        status = "과락"
+    elif item["total_score"] < state["pass_cutoff"]:
+        status = "불합격"
+    else:
+        status = "합격"
+    return status, fails
+
+
+def make_result(res, page_label, is_test=False, verify=None):
+    """채점 결과를 저장용 dict 로 만들고 판독 이미지를 저장한다. (lock 안에서 호출)"""
+    global next_id
+    rid = next_id
+    next_id += 1
+    vis_name = f"vis_{rid}.jpg"
+    cv2.imwrite(os.path.join(RESULT_DIR, vis_name), res["vis_img"])
+    item = {
+        "id": rid,
+        "filename": page_label,
+        "exam_type": res["exam_type"],
+        "student_id": res["student_id"],
+        "subject_scores": res["subject_scores"],
+        "total_score": res["total_score"],
+        "correct_count": res["correct_count"],
+        "multi_count": res["multi_count"],
+        "blank_count": res["blank_count"],
+        "needs_review": res["needs_review"],
+        "student_answers": {str(k): v for k, v in res["student_answers"].items()},
+        "vis_url": f"/results/{vis_name}",
+        "is_test": is_test,
+    }
+    if verify is not None:
+        item["verify"] = verify
+    return item
+
+
 def display_name(file_storage):
     return os.path.basename((file_storage.filename or "").replace("\\", "/"))
 
@@ -104,6 +148,8 @@ def handle_config():
             state["score_per_q"] = float(data["score_per_q"])
         if "pass_cutoff" in data:
             state["pass_cutoff"] = float(data["pass_cutoff"])
+        if "subject_cutoff" in data:
+            state["subject_cutoff"] = max(0.0, float(data["subject_cutoff"]))
         if "threshold" in data:
             state["threshold"] = float(data["threshold"])
             engine.fill_threshold = state["threshold"]
@@ -148,7 +194,6 @@ def grade_master():
 
 @app.route("/api/grade/students", methods=["POST"])
 def grade_students():
-    global next_id
     files = request.files.getlist("files")
     if not files:
         return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
@@ -164,26 +209,8 @@ def grade_students():
             for label, img_bgr in pages:
                 with lock:
                     res = engine.grade_sheet(img_bgr, state["answer_keys"], state["score_per_q"])
-                    rid = next_id
-                    next_id += 1
-                vis_name = f"vis_{rid}.jpg"
-                cv2.imwrite(os.path.join(RESULT_DIR, vis_name), res["vis_img"])
-                # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
-                page_label = label.replace(os.path.basename(temp_path), shown)
-                new_results.append({
-                    "id": rid,
-                    "filename": page_label,
-                    "exam_type": res["exam_type"],
-                    "student_id": res["student_id"],
-                    "subject_scores": res["subject_scores"],
-                    "total_score": res["total_score"],
-                    "correct_count": res["correct_count"],
-                    "multi_count": res["multi_count"],
-                    "blank_count": res["blank_count"],
-                    "needs_review": res["needs_review"],
-                    "student_answers": {str(k): v for k, v in res["student_answers"].items()},
-                    "vis_url": f"/results/{vis_name}",
-                })
+                    # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
+                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown)))
         except Exception as e:
             errors.append(f"{shown}: {e}")
         finally:
@@ -193,7 +220,12 @@ def grade_students():
     with lock:
         graded_results.extend(new_results)
         save_results()
-    return jsonify({"status": "success", "results": new_results, "errors": errors})
+    return jsonify({"status": "success", "results": [with_judge(r) for r in new_results], "errors": errors})
+
+
+def with_judge(item):
+    status, fails = judge(item)
+    return {**item, "result": status, "fail_subjects": fails}
 
 
 @app.route("/api/results", methods=["GET", "DELETE"])
@@ -201,7 +233,16 @@ def handle_results():
     global graded_results, next_id
     with lock:
         if request.method == "GET":
-            return jsonify(graded_results)
+            return jsonify([with_judge(r) for r in graded_results])
+        if request.args.get("scope") == "test":      # 테스트 결과만 삭제
+            for r in graded_results:
+                if r.get("is_test"):
+                    p = os.path.join(RESULT_DIR, os.path.basename(r["vis_url"]))
+                    if os.path.exists(p):
+                        os.remove(p)
+            graded_results = [r for r in graded_results if not r.get("is_test")]
+            save_results()
+            return jsonify({"status": "success"})
         graded_results = []
         next_id = 0
         for f in os.listdir(RESULT_DIR):
@@ -210,16 +251,52 @@ def handle_results():
         return jsonify({"status": "success"})
 
 
+SAMPLE_DIR = os.path.join(app.static_folder, "samples")
+
+
+@app.route("/api/test/info")
+def test_info():
+    with open(os.path.join(SAMPLE_DIR, "truth.json"), encoding="utf-8") as f:
+        meta = json.load(f)
+    return jsonify({"files": meta["files"], "students": [
+        {"student_id": k, "desc": v["desc"], "exam_type": v["exam_type"], "expected_score": v["score"]}
+        for k, v in meta["students"].items()]})
+
+
+@app.route("/api/test/run", methods=["POST"])
+def test_run():
+    """내장된 가상 답안지를 채점한다. 테스트용 정답을 따로 쓰므로 실제 정답 설정은 바뀌지 않는다.
+    결과에는 is_test 표시와 '인식 일치율'(가상 답안지를 만들 때의 정답 기록과 대조)이 붙는다."""
+    global graded_results
+    with open(os.path.join(SAMPLE_DIR, "truth.json"), encoding="utf-8") as f:
+        meta = json.load(f)
+    new = []
+    with lock:
+        for fn in meta["run_files"]:
+            for label, img in load_pages_from_file(os.path.join(SAMPLE_DIR, fn)):
+                res = engine.grade_sheet(img, meta["keys"], state["score_per_q"])
+                exp = meta["students"].get(res["student_id"])
+                verify = None
+                if exp:
+                    ok = sum(res["student_answers"].get(int(q)) == a for q, a in exp["answers"].items())
+                    verify = {"match": ok, "total": 100, "expected_score": exp["score"], "desc": exp["desc"]}
+                new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify))
+        graded_results = [r for r in graded_results if not r.get("is_test")] + new   # 이전 테스트 결과는 교체
+        save_results()
+    return jsonify({"status": "success", "results": [with_judge(r) for r in new]})
+
+
 @app.route("/api/export/excel", methods=["GET"])
 def export_excel():
     with lock:
         if not graded_results:
             return jsonify({"status": "error", "message": "채점 결과가 없습니다."}), 400
-        cutoff = state["pass_cutoff"]
         rows, detail = [], []
         for item in graded_results:
             ss = item["subject_scores"]
+            status, fails = judge(item)
             rows.append({
+                "구분": "테스트" if item.get("is_test") else "",
                 "순번": item["id"] + 1,
                 "파일명": item["filename"],
                 "문제유형": item["exam_type"],
@@ -230,7 +307,8 @@ def export_excel():
                 "D.상담의 이론과 실제(20)": ss["D"],
                 "E.정책과 법(20)": ss["E"],
                 "총점(100)": item["total_score"],
-                "합격여부": "합격" if item["total_score"] >= cutoff else "불합격",
+                "판정": status,
+                "과락과목": ",".join(fails),
                 "무표기": item["blank_count"],
                 "이중마킹": item["multi_count"],
                 "검수필요여부": "검수필요" if item["needs_review"] else "정상",

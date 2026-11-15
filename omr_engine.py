@@ -73,30 +73,55 @@ class OMREngine:
     def __init__(self, config=None):
         self.cfg = config or DEFAULT_CONFIG
         self.cw, self.ch = self.cfg['canonical_size']
-        self.fill_threshold = 0.50
+        self.fill_threshold = 0.65
+
+    @staticmethod
+    def _order_corners(pts):
+        """4점을 좌상, 우상, 우하, 좌하 순으로 정렬."""
+        pts = np.asarray(pts, dtype=np.float32).reshape(4, 2)
+        s, d = pts.sum(axis=1), pts[:, 0] - pts[:, 1]
+        return np.float32([pts[s.argmin()], pts[d.argmax()], pts[s.argmax()], pts[d.argmin()]])
+
+    def _box_corners(self, contour):
+        """외곽선의 실제 네 모서리(기울어진 상자도 정확히). 사각형 근사 실패 시 최소외접사각형."""
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        pts = approx.reshape(-1, 2) if len(approx) == 4 else cv2.boxPoints(cv2.minAreaRect(contour))
+        return self._order_corners(pts)
 
     def align_image(self, img_bgr):
+        """답안 상자와 수험번호 상자의 8개 모서리로 호모그래피를 구해 기울기/이동/원근을 보정한다."""
         resized = cv2.resize(img_bgr, (self.cw, self.ch), interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        ans_box_found, id_box_found = None, None
+        ans_c, id_c = None, None
         for c in contours:
             x, y, bw, bh = cv2.boundingRect(c)
-            if 1300 < bw < 1750 and 1100 < bh < 1450 and x > 500:
-                ans_box_found = (x, y, bw, bh)
-            elif 450 < bw < 680 and 600 < bh < 900 and x < 300 and y > 600:
-                id_box_found = (x, y, bw, bh)
-        if ans_box_found and id_box_found:
-            ax, ay, aw, ah = ans_box_found
-            ix, iy, iw, ih = id_box_found
-            ref_ax, ref_ay, ref_aw, ref_ah = self.cfg['regions']['answer_box']
-            ref_ix, ref_iy, ref_iw, ref_ih = self.cfg['regions']['id_box']
-            src_pts = np.float32([[ax, ay], [ax + aw, ay], [ax + aw, ay + ah], [ix, iy + ih]])
-            dst_pts = np.float32([[ref_ax, ref_ay], [ref_ax + ref_aw, ref_ay], [ref_ax + ref_aw, ref_ay + ref_ah], [ref_ix, ref_iy + ref_ih]])
-            M = cv2.getPerspectiveTransform(src_pts, dst_pts)
-            return cv2.warpPerspective(resized, M, (self.cw, self.ch), borderValue=(255, 255, 255))
-        return resized
+            area = cv2.contourArea(c)
+            if 1250 < bw < 1800 and 1050 < bh < 1500 and x > 450:
+                if ans_c is None or area > cv2.contourArea(ans_c):
+                    ans_c = c
+            elif 430 < bw < 720 and 560 < bh < 950 and x < 350 and y > 550:
+                if id_c is None or area > cv2.contourArea(id_c):
+                    id_c = c
+        if ans_c is None or id_c is None:
+            return resized
+
+        def ref_corners(box):
+            x, y, w, h = box
+            return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
+
+        src = np.vstack([self._box_corners(ans_c), self._box_corners(id_c)])
+        dst = np.float32(ref_corners(self.cfg['regions']['answer_box']) + ref_corners(self.cfg['regions']['id_box']))
+        H, _ = cv2.findHomography(src, dst, 0)
+        if H is None:
+            return resized
+        # 비정상 변환(상자를 잘못 잡은 경우) 방지: 모서리가 기준 위치에서 80px 넘게 벗어나면 변환 포기
+        mapped = cv2.perspectiveTransform(src.reshape(-1, 1, 2), H).reshape(-1, 2)
+        if np.abs(mapped - dst).max() > 80:
+            return resized
+        return cv2.warpPerspective(resized, H, (self.cw, self.ch), borderValue=(255, 255, 255))
 
     def get_bubble_ratio(self, binary_img, cx, cy, r):
         x1, y1 = max(0, int(cx - r)), max(0, int(cy - r))
@@ -109,6 +134,13 @@ class OMREngine:
         if total_pixels == 0: return 0.0
         return cv2.countNonZero(cv2.bitwise_and(roi, roi, mask=mask)) / float(total_pixels)
 
+    def pick_marked(self, ratios, th):
+        """한 줄(문항/수험번호 한 자리/유형)에서 마킹된 칸의 인덱스.
+        절대 기준(th) 이상이면서, 같은 줄의 가장 빈 칸보다 0.25 이상 진해야 마킹으로 인정한다.
+        (인쇄된 숫자·원 테두리 때문에 빈 칸도 스캔에서는 0.3~0.55가 나오므로 이중 조건 사용)"""
+        base = min(ratios)
+        return [i for i, v in enumerate(ratios) if v >= th and v >= base + 0.25]
+
     def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0):
         aligned = self.align_image(img_bgr)
         vis_img = aligned.copy()
@@ -116,8 +148,9 @@ class OMREngine:
         _, binary = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY_INV)
         r, th = self.cfg['bubble_radius'], self.fill_threshold
 
-        type_ratios = {k: self.get_bubble_ratio(binary, v[0], v[1], r) for k, v in self.cfg['type_bubbles'].items()}
-        marked_types = [k for k, v in type_ratios.items() if v >= th]
+        type_keys = list(self.cfg['type_bubbles'].keys())
+        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in type_keys]
+        marked_types = [type_keys[i] for i in self.pick_marked(type_ratios, th)]
         exam_type, type_status = (marked_types[0], '정상') if len(marked_types) == 1 else ('A', '유형오류')
         for t_code, (tx, ty) in self.cfg['type_bubbles'].items():
             color = (0, 180, 0) if t_code == exam_type and type_status == '정상' else (0, 165, 255)
@@ -127,7 +160,8 @@ class OMREngine:
         id_x_cols, id_y_rows = self.cfg['id_grid']['x_cols'], self.cfg['id_grid']['y_rows']
         student_id_chars, id_warnings = [], 0
         for cx in id_x_cols:
-            col_marked = [(d, cx, cy) for d, cy in enumerate(id_y_rows) if self.get_bubble_ratio(binary, cx, cy, r) >= th]
+            col_ratios = [self.get_bubble_ratio(binary, cx, cy, r) for cy in id_y_rows]
+            col_marked = [(d, cx, id_y_rows[d]) for d in self.pick_marked(col_ratios, th)]
             if len(col_marked) == 1:
                 student_id_chars.append(str(col_marked[0][0]))
                 cv2.circle(vis_img, (int(col_marked[0][1]), int(col_marked[0][2])), r + 2, (255, 120, 0), 2)
@@ -146,7 +180,8 @@ class OMREngine:
             for r_idx in range(20):
                 q_num, cy = s_idx * 20 + r_idx + 1, y_rows[r_idx]
                 correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
-                marked = [(c_i + 1, x_cols[col_base + c_i], cy) for c_i in range(5) if self.get_bubble_ratio(binary, x_cols[col_base + c_i], cy, r) >= th]
+                row_ratios = [self.get_bubble_ratio(binary, x_cols[col_base + c_i], cy, r) for c_i in range(5)]
+                marked = [(c_i + 1, x_cols[col_base + c_i], cy) for c_i in self.pick_marked(row_ratios, th)]
                 if len(marked) == 1:
                     chosen, m_cx, m_cy = marked[0]
                     student_answers[q_num] = str(chosen)
