@@ -34,9 +34,9 @@ state = {
         "B": [((i + 2) % 5) + 1 for i in range(100)],
     },
     "score_per_q": 5.0,           # 문항당 배점: 20문항 x 5점 = 과목 100점, 5과목 = 총점 500점
-    "pass_cutoff": 300.0,         # 합격 총점(이상이면 합격, 과락이 없을 때) = 500점의 60%
+    "pass_average": 60.0,         # 합격 평균: 과락이 없고 5과목 평균(총점/5)이 이 점수 이상이면 합격
     "subject_fail_cutoff": 40.0,  # 과락 점수: 한 과목이라도 이 점수 미만이면 과락(0=사용 안 함)
-    "schema": 2,
+    "schema": 3,
     "threshold": 0.65,
 }
 graded_results = []
@@ -58,10 +58,17 @@ def load_all():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, encoding="utf-8") as f:
             state.update(json.load(f))
-        if state.get("schema") != 2:   # 이전 버전(총점 100점 기준) 설정 → 500점 기준 기본값으로 이전
-            state.update({"score_per_q": 5.0, "pass_cutoff": 300.0, "subject_fail_cutoff": 40.0, "schema": 2})
+        if state.get("schema") != 3:   # 이전 버전 설정을 현재 방식(문항당 5점, 합격 평균)으로 이전
+            if state.get("schema") == 2 and "pass_cutoff" in state:
+                state["pass_average"] = round(float(state["pass_cutoff"]) / 5, 1)   # 합격 총점 → 합격 평균
+            else:
+                state.update({"score_per_q": 5.0, "subject_fail_cutoff": 40.0, "pass_average": 60.0})
+            state.pop("pass_cutoff", None)
+            state.pop("fail_cutoff", None)
+            state.pop("subject_cutoff", None)
             if float(state.get("threshold", 0)) < 0.6:
                 state["threshold"] = 0.65
+            state["schema"] = 3
             save_state()
     if os.path.exists(RESULTS_FILE):
         with open(RESULTS_FILE, encoding="utf-8") as f:
@@ -94,12 +101,12 @@ def scaled(item):
 
 
 def judge(item):
-    """item 은 scaled() 결과. 한 과목이라도 과락 점수 미만 → 과락, 그 외 총점이 합격 총점 이상 → 합격, 아니면 불합격."""
+    """item 은 scaled() 결과. 한 과목이라도 과락 점수 미만 → 과락, 그 외 평균(총점/5)이 합격 평균 이상 → 합격, 아니면 불합격."""
     cut = state["subject_fail_cutoff"]
     fails = [c for c in SUBJECT_CODES if cut > 0 and item["subject_scores"][c] < cut]
     if fails:
         return "과락", fails
-    return ("불합격" if item["total_score"] < state["pass_cutoff"] else "합격"), []
+    return ("불합격" if item["total_score"] / 5 < state["pass_average"] else "합격"), []
 
 
 def make_result(res, page_label, is_test=False, verify=None):
@@ -155,8 +162,8 @@ def handle_config():
                     state["answer_keys"][t] = [int(x) for x in keys[t]][:100]
         if "score_per_q" in data:
             state["score_per_q"] = float(data["score_per_q"])
-        if "pass_cutoff" in data:
-            state["pass_cutoff"] = float(data["pass_cutoff"])
+        if "pass_average" in data:
+            state["pass_average"] = float(data["pass_average"])
         if "subject_fail_cutoff" in data:
             state["subject_fail_cutoff"] = max(0.0, float(data["subject_fail_cutoff"]))
         if "threshold" in data:
@@ -235,7 +242,7 @@ def grade_students():
 def with_judge(item):
     sc = scaled(item)
     status, fails = judge(sc)
-    return {**sc, "result": status, "fail_subjects": fails}
+    return {**sc, "average": round(sc["total_score"] / 5, 1), "result": status, "fail_subjects": fails}
 
 
 @app.route("/api/results", methods=["GET", "DELETE"])
@@ -319,7 +326,7 @@ def export_excel():
                 f"D.상담의 이론과 실제({smax:g})": ss["D"],
                 f"E.정책과 법({smax:g})": ss["E"],
                 f"총점({tmax:g})": item["total_score"],
-                "평균": round(item["total_score"] / 5, 1),
+                "평균": item["average"],
                 "판정": item["result"],
                 "과락과목": ",".join(item["fail_subjects"]),
                 "무표기": item["blank_count"],

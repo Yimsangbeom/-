@@ -117,7 +117,7 @@ def make_all(form_pdf, outdir, seed=7):
         "student2": "A형 · 10문항 오답, 약간 기울어진 스캔",
         "student3": "B형 · 15문항 오답 + 무표기 3 + 이중마킹 2 (검수필요 표시 확인용), 기울어짐",
         "student4": "A형 · 6문항 오답, 연필처럼 연한 마킹 8문항, 흐릿한 스캔",
-        "student5": "A형 · 3과목(C) 13문항 오답 → 해당 과목 35점(과락 확인용), 나머지는 만점",
+        "student5": "A형 · 3과목(C) 13문항 오답, 해당 과목 35점(과락 확인용), 나머지는 만점",
     }
     students = {}
     for name, tr in truth.items():

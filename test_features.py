@@ -22,19 +22,20 @@ print("테스트 실행 OK:", {r["student_id"]: (r["total_score"], r["result"]) 
 # 재실행하면 테스트 결과는 교체(중복 없음)
 c.post("/api/test/run"); assert len(c.get("/api/results").get_json()) == 5
 
-# 기본값: 문항당 5점(과목 100/총 500), 합격 총점 300, 과락 40점(한 과목이라도 미만이면 과락)
-assert (state["score_per_q"], state["pass_cutoff"], state["subject_fail_cutoff"]) == (5.0, 300.0, 40.0)
+# 기본값: 문항당 5점(과목 100/총 500), 합격 평균 60, 과락 40점(한 과목이라도 미만이면 과락)
+assert (state["score_per_q"], state["pass_average"], state["subject_fail_cutoff"]) == (5.0, 60.0, 40.0)
 IDS = ("202600001", "202600002", "202600003", "202600004", "202600005")
 def results():
     r = {x["student_id"]: x for x in c.get("/api/results").get_json()}
     return [r[i] for i in IDS]
 rs = results()
 assert [r["total_score"] for r in rs] == [500, 450, 410, 470, 435]
+assert [r["average"] for r in rs] == [100, 90, 82, 94, 87]
 assert [r["result"] for r in rs] == ["합격", "합격", "합격", "합격", "과락"]
-assert rs[4]["fail_subjects"] == ["C"] and rs[4]["subject_scores"]["C"] == 35 and rs[4]["total_score"] >= 300  # 총점이 높아도 한 과목 과락이면 과락
-# 합격 총점 460 → 450·410 불합격(과락 아님), 470 합격
-c.post("/api/config", json={"pass_cutoff": 460}); assert [r["result"] for r in results()] == ["합격", "불합격", "불합격", "합격", "과락"]
-c.post("/api/config", json={"pass_cutoff": 300})
+assert rs[4]["fail_subjects"] == ["C"] and rs[4]["subject_scores"]["C"] == 35 and rs[4]["average"] >= 60  # 평균이 높아도 한 과목 과락이면 과락
+# 합격 평균 92 → 평균 90·82 불합격(과락 아님), 94 합격, 100 합격
+c.post("/api/config", json={"pass_average": 92}); assert [r["result"] for r in results()] == ["합격", "불합격", "불합격", "합격", "과락"]
+c.post("/api/config", json={"pass_average": 60})
 # 과락 점수 80 → 3번 학생(C,E=75점)도 과락, 2번(최저 80점)은 경계값이라 과락 아님(미만일 때만)
 c.post("/api/config", json={"subject_fail_cutoff": 80}); rs = results()
 assert [r["result"] for r in rs] == ["합격", "합격", "과락", "합격", "과락"] and set(rs[2]["fail_subjects"]) == {"C", "E"}, [(r["result"], r["fail_subjects"]) for r in rs]
@@ -60,4 +61,14 @@ c.post("/api/grade/students", data={"files": [(open(p, "rb"), "real.png")]})
 assert len(c.get("/api/results").get_json()) == 6
 c.delete("/api/results?scope=test")
 left = c.get("/api/results").get_json(); assert len(left) == 1 and not left[0]["is_test"]
-print("테스트만 삭제 OK"); print("ALL PASS")
+print("테스트만 삭제 OK")
+
+# 이전 버전 설정(schema 2, 합격 총점 300) → 합격 평균 60 으로 자동 이전
+import json, subprocess
+d2 = tempfile.mkdtemp()
+json.dump({"answer_keys": {"A": [1]*100, "B": [2]*100}, "score_per_q": 1.0, "pass_cutoff": 300.0, "subject_fail_cutoff": 40.0, "threshold": 0.5, "schema": 2},
+          open(os.path.join(d2, "state.json"), "w"))
+out = subprocess.run([sys.executable, "-c", "import app; s = app.state; print(s['pass_average'], s['score_per_q'], s['threshold'], s['schema'], 'pass_cutoff' in s)"],
+                     env={**os.environ, "OMR_DATA_DIR": d2}, capture_output=True, text=True).stdout.split()[-5:]
+assert out == ["60.0", "1.0", "0.65", "3", "False"], out   # 합격 총점 300 -> 평균 60, 배점은 유지
+print("설정 이전 OK"); print("ALL PASS")

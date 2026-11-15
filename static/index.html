@@ -14,22 +14,22 @@
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
   <header class="bg-blue-900 text-white px-6 py-4 flex justify-between items-center shadow">
     <div>
-      <h1 class="text-xl font-bold">📋 OCR_자동 채점 프로그램</h1>
+      <h1 class="text-xl font-bold">OCR_자동 채점 프로그램</h1>
       <p class="text-xs text-blue-200">2026년 제12회 인터넷중독전문상담사 자격검정 | ocr.ehancom.com</p>
     </div>
     <div class="flex items-center gap-2"><span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span><button onclick="openPwDialog()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">아이디/비밀번호 변경</button> <button onclick="logout()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">로그아웃</button></div>
   </header>
 
   <div class="bg-white border-b px-6 flex gap-2 pt-2">
-    <button onclick="showTab('home')" id="btn-home" class="px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700">🏠 1. 홈 (원본 답안지 & 정답 설정)</button>
-    <button onclick="showTab('grade')" id="btn-grade" class="px-5 py-2.5 font-bold text-slate-500">🚀 2. 채점 시작 (답안지 추가 & 검수)</button>
-    <button onclick="showTab('result')" id="btn-result" class="px-5 py-2.5 font-bold text-slate-500">📊 3. 결과 확인 (엑셀 .xlsx 다운로드)</button>
+    <button onclick="showTab('home')" id="btn-home" class="px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>1. 홈 (원본 답안지 & 정답 설정)</button>
+    <button onclick="showTab('grade')" id="btn-grade" class="px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>2. 채점 시작 (답안지 추가 & 검수)</button>
+    <button onclick="showTab('result')" id="btn-result" class="px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2"><svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>3. 결과 확인 (엑셀 .xlsx 다운로드)</button>
   </div>
 
   <main class="p-6 max-w-7xl mx-auto w-full flex-1">
     <section id="tab-home" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="bg-white p-6 rounded-xl shadow-sm border">
-        <h2 class="text-lg font-bold mb-4">📌 원본 답안지 형식 및 기준 설정</h2>
+        <h2 class="text-lg font-bold mb-4">원본 답안지 형식 및 기준 설정</h2>
         <ul class="text-sm space-y-2 text-slate-600 mb-6">
           <li>• <b>적용 양식:</b> 2026년 인터넷중독전문상담사 자격검정 OCR/OMR 답안지</li>
           <li>• <b>과목 구성:</b> A(이해), B(진단), C(기법), D(이론), E(정책) 각 20문항 (총 100문항)</li>
@@ -41,8 +41,8 @@
             <input id="cfg-score" type="number" value="5" step="0.5" min="0.5" oninput="updateScoreInfo()" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">합격 총점 <span class="text-xs font-normal text-slate-500">(과락이 없고 총점이 이 점수 이상이면 합격)</span></label>
-            <input id="cfg-cutoff" type="number" value="300" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">합격 평균 <span class="text-xs font-normal text-slate-500">(과락이 없고 5과목 평균이 이 점수 이상이면 합격)</span></label>
+            <input id="cfg-passavg" type="number" value="60" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
             <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(한 과목이라도 이 점수 미만이면 과락·불합격, 0=사용 안 함)</span></label>
@@ -58,11 +58,11 @@
 
       <div class="bg-white p-6 rounded-xl shadow-sm border flex flex-col">
         <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-bold">🔑 정답지 등록 (엑셀 .xlsx 연동)</h2>
+          <h2 class="text-lg font-bold">정답지 등록 (엑셀 .xlsx 연동)</h2>
           <div class="flex gap-2">
-            <button onclick="downloadSampleKey()" class="bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold">📤 정답 양식 샘플(.xlsx)</button>
+            <button onclick="downloadSampleKey()" class="bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold">정답 양식 샘플(.xlsx)</button>
             <label class="bg-blue-600 text-white text-xs px-3 py-2 rounded font-bold cursor-pointer">
-              📥 정답 엑셀 불러오기(.xlsx)
+              정답 엑셀 불러오기(.xlsx)
               <input type="file" accept=".xlsx" class="hidden" onchange="uploadKeyExcel(event)">
             </label>
           </div>
@@ -72,11 +72,11 @@
       </div>
 
       <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
-        <h2 class="text-lg font-bold mb-1">🧪 테스트용 가상 답안지</h2>
-        <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 🧪 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
+        <h2 class="text-lg font-bold mb-1">테스트용 가상 답안지</h2>
+        <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 [테스트] 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
         <div class="flex flex-wrap gap-2 mb-4">
-          <button onclick="runTest()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-lg">▶ 테스트 실행 (가상 답안지 5장 자동 채점)</button>
-          <button onclick="clearTest()" class="bg-slate-400 hover:bg-slate-500 text-white font-bold px-5 py-2.5 rounded-lg">🗑️ 테스트 결과만 삭제</button>
+          <button onclick="runTest()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-lg">테스트 실행 (가상 답안지 5장 자동 채점)</button>
+          <button onclick="clearTest()" class="bg-slate-400 hover:bg-slate-500 text-white font-bold px-5 py-2.5 rounded-lg">테스트 결과만 삭제</button>
         </div>
         <div class="text-sm font-semibold mb-2">가상 답안지 파일 (클릭하면 원본을 볼 수 있습니다)</div>
         <ul id="test-files" class="text-sm space-y-1 text-slate-700"></ul>
@@ -88,32 +88,32 @@
     <section id="tab-grade" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
       <div class="lg:col-span-4 space-y-6">
         <div class="bg-white p-5 rounded-xl shadow-sm border">
-          <h3 class="font-bold text-base mb-2">🎯 정답 답안지 인식 (마스터 PDF/이미지)</h3>
+          <h3 class="font-bold text-base mb-2">정답 답안지 인식 (마스터 PDF/이미지)</h3>
           <p class="text-xs text-slate-500 mb-3">A형 또는 B형 정답을 마킹한 스캔본을 올리면 정답으로 자동 세팅됩니다.</p>
           <label class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg cursor-pointer">
-            📄 정답 답안지 파일 선택
+            정답 답안지 파일 선택
             <input type="file" accept=".pdf,.png,.jpg,.jpeg" class="hidden" onchange="uploadMasterSheet(event)">
           </label>
         </div>
 
         <div class="bg-white p-5 rounded-xl shadow-sm border space-y-3">
-          <h3 class="font-bold text-base mb-2">➕ 수험생 답안지 추가</h3>
+          <h3 class="font-bold text-base mb-2">수험생 답안지 추가</h3>
           <label class="block w-full text-center bg-teal-700 hover:bg-teal-800 text-white font-bold py-3 rounded-lg cursor-pointer">
-            📁 + 폴더 전체 검색 (일괄 업로드)
+            + 폴더 전체 검색 (일괄 업로드)
             <input type="file" webkitdirectory directory multiple class="hidden" onchange="uploadStudentSheets(event)">
           </label>
           <label class="block w-full text-center bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-lg cursor-pointer">
-            🖼️ + 개별 파일 추가 (이미지 / PDF)
+            + 개별 파일 추가 (이미지 / PDF)
             <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" class="hidden" onchange="uploadStudentSheets(event)">
           </label>
           <hr class="my-2">
-          <button onclick="clearAllResults()" class="w-full bg-slate-400 hover:bg-slate-500 text-white text-sm font-bold py-2 rounded-lg">🗑️ 답안지 목록 초기화</button>
+          <button onclick="clearAllResults()" class="w-full bg-slate-400 hover:bg-slate-500 text-white text-sm font-bold py-2 rounded-lg">답안지 목록 초기화</button>
         </div>
       </div>
 
       <div class="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col h-[560px]">
-          <h3 class="font-bold mb-3">📋 답안지 List (<span id="list-count">0</span>장)</h3>
+          <h3 class="font-bold mb-3">답안지 List (<span id="list-count">0</span>장)</h3>
           <div class="flex-1 overflow-y-auto">
             <table class="w-full text-xs text-center border-collapse">
               <thead class="bg-slate-100 sticky top-0">
@@ -125,7 +125,7 @@
         </div>
 
         <div class="bg-white p-4 rounded-xl shadow-sm border flex flex-col h-[560px]">
-          <h3 class="font-bold mb-2">🔍 마킹 판독 화면 (초록=정답, 빨강=오답)</h3>
+          <h3 class="font-bold mb-2">마킹 판독 화면 (초록=정답, 빨강=오답)</h3>
           <div class="flex-1 bg-slate-900 rounded flex items-center justify-center overflow-hidden">
             <img id="preview-img" class="max-h-full max-w-full object-contain hidden" />
             <span id="preview-empty" class="text-slate-400 text-xs">좌측 리스트에서 답안지를 클릭하세요.</span>
@@ -138,7 +138,7 @@
       <div class="bg-white p-5 rounded-xl shadow-sm border flex justify-between items-center">
         <div id="result-summary" class="font-bold text-blue-900">총 응시자: 0명</div>
         <button onclick="window.location.href='/api/export/excel'" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg shadow">
-          📊 채점 결과 엑셀 다운로드 (.xlsx)
+          채점 결과 엑셀 다운로드 (.xlsx)
         </button>
       </div>
       <div class="bg-white p-5 rounded-xl shadow-sm border overflow-x-auto">
@@ -147,7 +147,7 @@
             <tr>
               <th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th>
               <th class="p-2 border">A.이해</th><th class="p-2 border">B.진단</th><th class="p-2 border">C.기법</th><th class="p-2 border">D.이론</th><th class="p-2 border">E.정책</th>
-              <th class="p-2 border">총점</th><th class="p-2 border">판정</th><th class="p-2 border">검수상태</th>
+              <th class="p-2 border">총점</th><th class="p-2 border">평균</th><th class="p-2 border">판정</th><th class="p-2 border">검수상태</th>
             </tr>
           </thead>
           <tbody id="result-tbody"></tbody>
@@ -157,7 +157,7 @@
   </main>
 
   <dialog id="pw-dlg" class="rounded-xl p-6 shadow-xl border w-80">
-    <h3 class="font-bold mb-3">🔐 아이디 / 비밀번호 변경</h3>
+    <h3 class="font-bold mb-3">아이디 / 비밀번호 변경</h3>
     <input id="pw-user" placeholder="아이디" class="border rounded px-3 py-2 w-full mb-2" autocomplete="username">
     <input id="pw-cur" type="password" placeholder="현재 비밀번호" class="border rounded px-3 py-2 w-full mb-2" autocomplete="current-password">
     <input id="pw-new" type="password" placeholder="새 비밀번호 (8자 이상)" class="border rounded px-3 py-2 w-full mb-2" autocomplete="new-password">
@@ -186,7 +186,7 @@
     }
     async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
 
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 5, pass_cutoff: 300, subject_fail_cutoff: 40, threshold: 0.65 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 5, pass_average: 60, subject_fail_cutoff: 40, threshold: 0.65 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -198,8 +198,8 @@
       ['home', 'grade', 'result'].forEach(id => {
         document.getElementById('tab-' + id).classList.toggle('hidden', id !== t);
         document.getElementById('btn-' + id).className = id === t
-          ? 'px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700'
-          : 'px-5 py-2.5 font-bold text-slate-500';
+          ? 'px-5 py-2.5 font-bold border-b-2 border-blue-700 text-blue-700 inline-flex items-center gap-2'
+          : 'px-5 py-2.5 font-bold text-slate-500 inline-flex items-center gap-2';
       });
     }
 
@@ -207,7 +207,7 @@
       const res = await fetch('/api/config');
       currentConfig = await res.json();
       document.getElementById('cfg-score').value = currentConfig.score_per_q;
-      document.getElementById('cfg-cutoff').value = currentConfig.pass_cutoff;
+      document.getElementById('cfg-passavg').value = currentConfig.pass_average;
       document.getElementById('cfg-subfail').value = currentConfig.subject_fail_cutoff;
       updateScoreInfo();
       document.getElementById('cfg-th').value = currentConfig.threshold;
@@ -225,7 +225,7 @@
 
     async function saveConfig() {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
-      currentConfig.pass_cutoff = parseFloat(document.getElementById('cfg-cutoff').value);
+      currentConfig.pass_average = parseFloat(document.getElementById('cfg-passavg').value);
       currentConfig.subject_fail_cutoff = parseFloat(document.getElementById('cfg-subfail').value) || 0;
       currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
       await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
@@ -301,13 +301,13 @@
       return `<span class="px-2 py-0.5 rounded font-bold ${c}">${item.result}</span>`;
     }
     function nameCell(item) {
-      const t = item.is_test ? '<span class="text-violet-600 font-bold">🧪</span> ' : '';
+      const t = '';
       const v = item.verify ? `<div class="text-[10px] text-violet-600">정답기록 대비 인식 ${item.verify.match}/${item.verify.total} 일치</div>` : '';
       return t + esc(item.filename) + v;
     }
     function subCell(item, code) {
       const bad = (item.fail_subjects || []).includes(code);
-      return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}${bad ? ' ⚠' : ''}</td>`;
+      return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}</td>`;
     }
     async function refreshResults() {
       const res = await fetch('/api/results');
@@ -317,25 +317,25 @@
       const rtbody = document.getElementById('result-tbody');
       let html1 = '', html2 = '';
       gradedList.forEach((item, i) => {
-        const badge = item.needs_review ? '<span class="text-red-600 font-bold">⚠️검수필요</span>' : '<span class="text-emerald-600 font-bold">✅정상</span>';
+        const badge = item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>';
         html1 += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left max-w-[140px] break-all">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td>
           <td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
         html2 += `<tr class="border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
           ${['A','B','C','D','E'].map(c => subCell(item, c)).join('')}
-          <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
+          <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${item.average.toFixed(1)}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });
       tbody.innerHTML = html1; rtbody.innerHTML = html2;
       const n = r => gradedList.filter(x => x.result === r).length, nt = gradedList.filter(x => x.is_test).length;
       document.getElementById('result-summary').innerHTML = `총 응시자: ${gradedList.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
-        + (nt ? ` <span class="text-xs font-normal text-violet-600">(🧪 테스트 ${nt}건 포함)</span>` : '')
-        + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 총점 ${currentConfig.pass_cutoff}점 이상 (과목 만점 ${currentConfig.score_per_q * 20} / 총점 만점 ${currentConfig.score_per_q * 100})</div>`;
+        + (nt ? ` <span class="text-xs font-normal text-violet-600">(테스트 ${nt}건 포함)</span>` : '')
+        + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 평균 ${currentConfig.pass_average}점 이상 (과목 만점 ${currentConfig.score_per_q * 20} / 총점 만점 ${currentConfig.score_per_q * 100})</div>`;
     }
 
     async function loadTestInfo() {
       const d = await (await fetch('/api/test/info')).json();
-      document.getElementById('test-files').innerHTML = d.files.map(f => `<li>📄 <a class="text-blue-700 underline" href="/samples/${f.file}" target="_blank">${f.file}</a> <span class="text-slate-500">— ${esc(f.desc)}</span></li>`).join('');
+      document.getElementById('test-files').innerHTML = d.files.map(f => `<li><a class="text-blue-700 underline" href="/samples/${f.file}" target="_blank">${f.file}</a> <span class="text-slate-500">— ${esc(f.desc)}</span></li>`).join('');
       document.getElementById('test-students').innerHTML = d.students.map(s => `<tr class="border-b"><td class="p-2 font-mono">${s.student_id}</td><td class="p-2">${s.exam_type}</td><td class="p-2 font-bold">${s.expected_correct * currentConfig.score_per_q}</td><td class="p-2 text-left">${esc(s.desc)}</td></tr>`).join('');
     }
     async function runTest() {
@@ -344,7 +344,7 @@
       await refreshResults();
       showTab('grade');
       const ok = d.results.filter(x => x.verify && x.verify.match === 100).length;
-      alert(`테스트 완료: 가상 답안지 ${d.results.length}장 채점, 정답 기록과 100% 일치 ${ok}장.\n[2. 채점 시작] 탭의 목록에서 🧪 항목을 눌러 판독 화면을 확인하세요.`);
+      alert(`테스트 완료: 가상 답안지 ${d.results.length}장 채점, 정답 기록과 100% 일치 ${ok}장.\n[2. 채점 시작] 탭의 목록에서 [테스트] 항목을 눌러 판독 화면을 확인하세요.`);
     }
     async function clearTest() {
       await fetch('/api/results?scope=test', { method: 'DELETE' });
