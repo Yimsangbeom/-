@@ -23,19 +23,39 @@ def make_sheet(exam_type, sid, answers, blanks=(), doubles=()):
 if __name__ == '__main__':
     random.seed(1)
     os.environ['OMR_DATA_DIR'] = tempfile.mkdtemp()
-    import auth
-    auth.set_password(os.environ['OMR_DATA_DIR'], 'testpass123')
     from app import app, state
     key = [random.randint(1, 5) for _ in range(100)]
     c = app.test_client()
-    # 인증: 미로그인 차단 / 오답 / 로그인
+    # 인증: 미설정 상태 → 프록시 경유 설정 거부 → 로컬 직접 설정 → 로그인/변경/잠금
+    assert c.get('/api/auth/status').get_json() == {'configured': False, 'setup_allowed': True, 'logged_in': False, 'username': None}
     assert c.get('/').status_code == 302 and c.get('/api/results').status_code == 401
-    assert c.get('/results/x.jpg').status_code == 401 and c.get('/app.py').status_code in (302, 401)
-    assert c.get('/login').status_code == 200
-    assert c.post('/api/login', json={'password': 'wrong'}).status_code == 401
-    assert c.post('/api/login', json={'password': 'testpass123'}).status_code == 200
-    assert c.get('/').status_code == 200
+    ext = {'X-Real-IP': '1.2.3.4'}
+    assert c.get('/api/auth/status', headers=ext).get_json()['setup_allowed'] is False
+    assert c.post('/api/setup', json={'password': 'abcd1234'}, headers=ext).status_code == 403
+    assert c.post('/api/setup', json={'password': 'short'}).status_code == 400
+    assert c.post('/api/setup', json={'password': 'testpass123'}).status_code == 200   # 설정 + 자동 로그인
+    assert c.get('/').status_code == 200 and c.post('/api/setup', json={'password': 'x'*9}).status_code == 409
+    c.post('/api/logout')
+    assert c.get('/api/results').status_code == 401 and c.get('/results/x.jpg').status_code == 401
+    assert c.post('/api/login', json={'username': 'admin', 'password': 'testpass123'}).status_code == 401
+    assert c.post('/api/login', json={'username': 'hancom', 'password': 'wrong'}).status_code == 401
+    assert c.post('/api/login', json={'username': 'hancom', 'password': 'testpass123'}).status_code == 200
+    other = app.test_client(); other.post('/api/login', json={'username': 'hancom', 'password': 'testpass123'})
+    assert other.get('/api/results').status_code == 200
+    assert c.post('/api/password', json={'current': 'bad', 'new': 'newpass1234'}).status_code == 401
+    assert c.post('/api/password', json={'current': 'testpass123', 'new': 'newpass1234'}).status_code == 200
+    assert c.get('/api/results').status_code == 200 and other.get('/api/results').status_code == 401  # 다른 세션 무효
+    assert app.test_client().post('/api/login', json={'username': 'hancom', 'password': 'testpass123'}).status_code == 401
+    assert c.post('/api/login', json={'username': 'hancom', 'password': 'newpass1234'}).status_code == 200
+    # 아이디 변경(검증 포함)
+    assert c.post('/api/password', json={'username': 'a b', 'current': 'newpass1234', 'new': 'newpass1234'}).status_code == 400
+    assert c.post('/api/password', json={'username': 'exam01', 'current': 'newpass1234', 'new': 'newpass1234'}).status_code == 200
+    assert c.get('/api/auth/status').get_json()['username'] == 'exam01'
+    c.post('/api/logout')
+    assert c.post('/api/login', json={'username': 'hancom', 'password': 'newpass1234'}).status_code == 401
+    assert c.post('/api/login', json={'username': 'exam01', 'password': 'newpass1234'}).status_code == 200
     print('인증 OK')
+
     d = tempfile.mkdtemp()
     def put(name, img): p = os.path.join(d, name); cv2.imwrite(p, img); return p
 
@@ -66,8 +86,8 @@ if __name__ == '__main__':
     # 로그아웃 후 차단, 5회 실패 시 잠금
     assert c.post('/api/logout').status_code == 200 and c.get('/api/results').status_code == 401
     c2 = app.test_client()
-    codes = [c2.post('/api/login', json={'password': 'bad'}).status_code for _ in range(6)]
+    codes = [c2.post('/api/login', json={'username': 'exam01', 'password': 'bad'}).status_code for _ in range(6)]
     assert codes[:5] == [401]*5 and codes[5] == 429, codes
-    assert c2.post('/api/login', json={'password': 'testpass123'}).status_code == 429
+    assert c2.post('/api/login', json={'username': 'exam01', 'password': 'newpass1234'}).status_code == 429
     print('로그아웃/잠금 OK')
     print('ALL PASS')

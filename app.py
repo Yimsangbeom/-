@@ -258,7 +258,7 @@ if __name__ == "__main__":
     # debug=True 는 외부 공개 서버에서 원격 코드 실행 위험이 있어 사용하지 않는다.
     from waitress import serve
     if not auth.is_configured(DATA_DIR):
-        raise SystemExit("접속 비밀번호가 설정되지 않았습니다. 먼저 'python set_password.py' 를 실행하세요.")
+        print("※ 접속 비밀번호 미설정: 서버 PC 브라우저에서 http://127.0.0.1:5000 으로 접속해 설정하세요.")
     # 기본은 내부(127.0.0.1:5000)에서만 대기하고, 외부 접속은 Caddy(HTTPS)가 받아 전달한다.
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))

@@ -5,9 +5,11 @@
 2. `run.bat` 실행 (venv 생성 → 패키지 설치 → waitress로 80포트 서비스)
 3. 브라우저에서 `http://localhost` 확인 후 `http://ocr.ehancom.com`
 
-## 접속 비밀번호
-- 최초 1회 / 변경: `venv\Scripts\python set_password.py` (해시로 `data/auth.json`에 저장, 재시작 불필요)
-- 비밀번호가 없으면 서버가 시작되지 않음. 5회 연속 실패 시 해당 IP 5분 잠금, 로그인 12시간 유지.
+## 아이디 / 비밀번호
+- **최초 설정**: 서버 PC 브라우저에서 `http://127.0.0.1:5000` 접속 → 아이디(기본 `hancom`)와 비밀번호 입력. (외부 접속으로는 설정 불가 → 남이 먼저 선점할 수 없음)
+- **변경**: 로그인 후 화면 오른쪽 위 [아이디/비밀번호 변경] (현재 비밀번호 필요, 변경 시 다른 기기는 로그아웃)
+- **잊어버렸을 때**: 서버에서 `reset_password.bat` 실행(= `data\auth.json` 삭제, 채점 결과/정답은 유지) → 위 최초 설정 다시
+- 5회 연속 실패 시 해당 IP 5분 잠금, 로그인 12시간 유지. 비밀번호는 해시로만 저장.
 
 ## 자동 시작 (재부팅 후에도)
 `schtasks /create /tn OCR_Score_Server /tr "D:\OCR_Score_app\start_server.bat" /sc onstart /ru SYSTEM /rl highest /f`
