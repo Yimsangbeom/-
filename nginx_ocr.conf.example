@@ -1,0 +1,26 @@
+# 기존 nginx 에 "추가"하는 server 블록 예시 (기존 사이트 설정은 수정하지 않음)
+# ssl_certificate 경로는 ocr.ehancom.com 을 포함하는 인증서로 바꿔야 함
+server {
+    listen 443 ssl;
+    server_name ocr.ehancom.com;
+
+    ssl_certificate     C:/경로/fullchain.pem;
+    ssl_certificate_key C:/경로/privkey.pem;
+
+    client_max_body_size 1g;
+    proxy_read_timeout   600s;
+    proxy_send_timeout   600s;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+
+server {
+    listen 80;
+    server_name ocr.ehancom.com;
+    return 301 https://$host$request_uri;
+}

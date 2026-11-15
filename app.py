@@ -257,8 +257,8 @@ def export_excel():
 if __name__ == "__main__":
     # debug=True 는 외부 공개 서버에서 원격 코드 실행 위험이 있어 사용하지 않는다.
     from waitress import serve
-    # 기본은 내부(127.0.0.1:8000)에서만 대기하고, 외부 접속은 Caddy(HTTPS)가 받아 전달한다.
+    # 기본은 내부(127.0.0.1:5000)에서만 대기하고, 외부 접속은 Caddy(HTTPS)가 받아 전달한다.
     host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "8000"))
+    port = int(os.environ.get("PORT", "5000"))
     print(f"OMR 채점 서버 시작: http://{host}:{port}")
     serve(app, host=host, port=port, threads=4)
