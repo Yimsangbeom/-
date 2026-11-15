@@ -25,15 +25,27 @@ $set2 = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 
     -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName 'OCR_Score_Watchdog' -Action $act2 -Trigger $trg2 -Principal $pri -Settings $set2 -Force | Out-Null
 
-# 지금 바로 (재)시작: 5000번 포트를 쓰는 기존 채점 서버만 종료하고 작업으로 다시 띄운다
+# 지금 바로 (재)시작: 실행 중인 작업을 먼저 멈추고(이미 실행 중이면 새 시작이 거부되므로), 5000번 포트의 기존 채점 서버만 종료한 뒤 다시 시작
+Stop-ScheduledTask -TaskName 'OCR_Score_Server' -ErrorAction SilentlyContinue
 Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 Start-ScheduledTask -TaskName 'OCR_Score_Server'
-Start-Sleep -Seconds 10
+Write-Host '서버를 시작하는 중입니다 (처음에는 최대 90초 걸릴 수 있습니다)...'
 $ok = $false
-try { $ok = ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 'http://127.0.0.1:5000/healthz').StatusCode -eq 200) } catch {}
+for ($i = 1; $i -le 30; $i++) {
+    Start-Sleep -Seconds 3
+    try { if ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 'http://127.0.0.1:5000/healthz').StatusCode -eq 200) { $ok = $true; break } } catch {}
+}
+$info = Get-ScheduledTaskInfo -TaskName 'OCR_Score_Server'
 Write-Host ''
 Write-Host ("서버 작업 상태 : " + (Get-ScheduledTask -TaskName 'OCR_Score_Server').State)
 Write-Host ("실행 시간 제한 : " + (Get-ScheduledTask -TaskName 'OCR_Score_Server').Settings.ExecutionTimeLimit + "  (PT0S = 무제한)")
 Write-Host ("감시 작업 상태 : " + (Get-ScheduledTask -TaskName 'OCR_Score_Watchdog').State)
-Write-Host ("서버 응답      : " + $(if ($ok) { '정상 (http://127.0.0.1:5000/healthz)' } else { '아직 응답 없음 - 잠시 후 data\server.log 를 확인하세요' }))
+if ($ok) {
+    Write-Host '서버 응답      : 정상 (http://127.0.0.1:5000/healthz)'
+} else {
+    Write-Host ('서버 응답      : 90초가 지나도 응답이 없습니다 (마지막 작업 결과 ' + $info.LastTaskResult + ')') -ForegroundColor Red
+    Write-Host '--- data\server.log 마지막 30줄 ---'
+    Get-Content (Join-Path $root 'data\server.log') -Tail 30 -Encoding UTF8 -ErrorAction SilentlyContinue
+    Write-Host '위 내용을 알려 주시면 원인을 확인하겠습니다. (감시 작업이 5분마다 다시 시도하기도 합니다)'
+}

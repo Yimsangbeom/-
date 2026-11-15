@@ -6,9 +6,11 @@ function Log($m) { Add-Content -Path $log -Encoding UTF8 -Value ("[{0}] [감시]
 function Healthy {
     try { return ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 'http://127.0.0.1:5000/healthz').StatusCode -eq 200) } catch { return $false }
 }
-if (Healthy) { exit 0 }
-Start-Sleep -Seconds 20            # 일시적인 지연일 수 있어 한 번 더 확인
-if (Healthy) { exit 0 }
+# 일시적인 지연(대량 채점, 시작 직후 등)을 장애로 오판하지 않도록 30초 간격으로 3번 연속 실패했을 때만 조치한다
+for ($i = 0; $i -lt 3; $i++) {
+    if (Healthy) { exit 0 }
+    if ($i -lt 2) { Start-Sleep -Seconds 30 }
+}
 
 $task = Get-ScheduledTask -TaskName 'OCR_Score_Server'
 if ($null -eq $task) { Log '작업 OCR_Score_Server 가 없습니다. install_service.ps1 을 다시 실행하세요.'; exit 1 }

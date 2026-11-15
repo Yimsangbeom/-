@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import os
@@ -32,7 +33,8 @@ app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"), static_url
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 요청당 최대 1GB
 auth.init_auth(app, DATA_DIR, app.static_folder)
 
-lock = threading.RLock()
+lock = threading.RLock()        # 설정/결과(메모리·DB) 접근용: 짧게만 잡는다
+grade_lock = threading.Lock()   # 이미지 판독(CPU 작업)용: 판독은 한 번에 하나씩, 그동안 다른 요청(결과/통계/상태 확인)은 막히지 않는다
 _engines = {}
 
 
@@ -40,6 +42,20 @@ def get_engine(layout_id):
     if layout_id not in _engines:
         _engines[layout_id] = OMREngine(layouts.LAYOUTS[layout_id]["config"])
     return _engines[layout_id]
+
+
+def snapshot():
+    """판독에 필요한 설정을 한 번에 복사해 둔다(판독하는 동안 잠금을 쥐지 않기 위해)."""
+    with lock:
+        return copy.deepcopy(state["exam"]), {k: list(v) for k, v in state["answer_keys"].items()}, float(state["threshold"])
+
+
+def grade_image(img_bgr, ex, keys, threshold):
+    """이미지 한 장 판독. 전체 잠금(lock) 밖에서 실행하고, 판독끼리만 grade_lock 으로 직렬화한다."""
+    with grade_lock:
+        eng = get_engine(ex["layout"])
+        eng.fill_threshold = threshold
+        return eng.grade_sheet(img_bgr, keys, 1.0, exam=ex)
 
 
 def current_engine():
@@ -303,9 +319,9 @@ def grade_master():
         if not pages:
             return jsonify({"status": "error", "message": "이미지를 읽을 수 없습니다."}), 400
         _, img_bgr = pages[0]
+        ex, keys, thr = snapshot()
+        res = grade_image(img_bgr, ex, keys, thr)
         with lock:
-            ex = state["exam"]
-            res = current_engine().grade_sheet(img_bgr, state["answer_keys"], 1.0, exam=ex)
             t_code = res["exam_type"]
             extracted, problems = [], []
             for q in range(1, exam_mod.total_questions(ex) + 1):
@@ -339,6 +355,7 @@ def grade_students():
         return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
 
     new_results, errors = [], []
+    ex, keys, thr = snapshot()
     for file in files:
         shown = display_name(file)
         temp_path = save_upload(file)
@@ -347,11 +364,10 @@ def grade_students():
             if not pages:
                 errors.append(f"{shown}: 이미지를 읽을 수 없습니다.")
             for label, img_bgr in pages:
-                with lock:
-                    res = current_engine().grade_sheet(img_bgr, state["answer_keys"], 1.0, exam=state["exam"])
+                res = grade_image(img_bgr, ex, keys, thr)       # 판독(오래 걸림)은 전체 잠금 밖에서
+                with lock:                                      # 결과 만들기/저장만 짧게 잠금
                     # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
-                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown),
-                                                   keys=state["answer_keys"]))
+                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys))
         except Exception as e:
             errors.append(f"{shown}: {e}")
         finally:
@@ -446,16 +462,19 @@ def test_run():
     with open(os.path.join(SAMPLE_DIR, "truth.json"), encoding="utf-8") as f:
         meta = json.load(f)
     new = []
+    ex, _, thr = snapshot()
+    graded = []
+    for fn in meta["run_files"]:
+        for label, img in load_pages_from_file(os.path.join(SAMPLE_DIR, fn)):
+            graded.append((label, grade_image(img, ex, meta["keys"], thr)))      # 판독은 전체 잠금 밖에서
     with lock:
-        for fn in meta["run_files"]:
-            for label, img in load_pages_from_file(os.path.join(SAMPLE_DIR, fn)):
-                res = current_engine().grade_sheet(img, meta["keys"], 1.0, exam=state["exam"])
-                exp = meta["students"].get(res["student_id"])
-                verify = None
-                if exp:
-                    ok = sum(res["student_answers"].get(int(q)) == a for q, a in exp["answers"].items())
-                    verify = {"match": ok, "total": 100, "expected_correct": exp["score"], "desc": exp["desc"]}
-                new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify, keys=meta["keys"]))
+        for label, res in graded:
+            exp = meta["students"].get(res["student_id"])
+            verify = None
+            if exp:
+                ok = sum(res["student_answers"].get(int(q)) == a for q, a in exp["answers"].items())
+                verify = {"match": ok, "total": 100, "expected_correct": exp["score"], "desc": exp["desc"]}
+            new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify, keys=meta["keys"]))
         graded_results = [r for r in graded_results if not r.get("is_test")] + new   # 이전 테스트 결과는 교체
         store.delete_results(is_test=True, exam_id=registry["active"])
         store.add_results(new)
@@ -731,4 +750,5 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
     print(f"OMR 채점 서버 시작: http://{host}:{port}")
-    serve(app, host=host, port=port, threads=4)
+    threads = int(os.environ.get("OMR_THREADS", "12"))   # 동시 요청 처리 수(판독 자체는 한 번에 하나씩이라 여유 있게)
+    serve(app, host=host, port=port, threads=threads)
