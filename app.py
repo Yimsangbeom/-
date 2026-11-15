@@ -403,6 +403,16 @@ def delete_selected():
     return jsonify({"status": "success", "deleted": len(gone)})
 
 
+@app.route("/healthz")
+def healthz():
+    """상태 확인용(로그인 불필요, 내부 정보 없음): 서버와 DB 가 정상이면 200. 감시 작업(healthcheck.ps1)이 사용한다."""
+    try:
+        store.ping()
+    except Exception:
+        return jsonify({"status": "error"}), 503
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/system")
 def api_system():
     """저장 위치/건수 (홈 화면 '데이터 관리'에 표시)."""

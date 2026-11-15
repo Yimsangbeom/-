@@ -1,7 +1,4 @@
 @echo off
-rem 작업 스케줄러(부팅 시, SYSTEM)용 - 창 없이 실행, 로그는 data\server.log
+rem 서버 실행기(run_server.ps1)를 실행합니다. 서버가 종료되면 자동으로 다시 시작합니다. 자동 시작 등록은 install_service.ps1 참고
 cd /d %~dp0
-if not exist data mkdir data
-set PORT=5000
-set OMR_SECURE_COOKIE=1
-venv\Scripts\python.exe app.py >> data\server.log 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_server.ps1"

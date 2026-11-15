@@ -12,7 +12,7 @@
 - 5회 연속 실패 시 해당 IP 5분 잠금, 로그인 12시간 유지. 비밀번호는 해시로만 저장.
 
 ## 자동 시작 (재부팅 후에도)
-`schtasks /create /tn OCR_Score_Server /tr "D:\OCR_Score_app\start_server.bat" /sc onstart /ru SYSTEM /rl highest /f`
+아래 "항상 켜져 있게" 절의 `install_service.ps1` 을 사용합니다. (예전 `schtasks /create ... start_server.bat` 방식은 72시간 제한/자동 재시작 없음 문제가 있어 대체됨)
 
 ## 배점 / 합격 / 과락 판정
 - 5과목 x 20문항, **문항당 5점 -> 과목 만점 100점, 총점 만점 500점** (홈 화면에서 변경 가능)
@@ -68,3 +68,10 @@
 - 스타일: `static/vendor/tailwind.css` (미리 빌드), 엑셀: `static/vendor/xlsx.full.min.js`
 - `index.html`/`login.html` 의 클래스를 바꾸면 스타일을 다시 만들어야 합니다 (개발 PC에서 Node 필요):
   `npm i -D tailwindcss@3.4.17` → `npx tailwindcss -c tailwind.config.js -i tailwind.input.css -o static/vendor/tailwind.css --minify`
+
+## 항상 켜져 있게 (자동 시작 / 자동 재시작 / 감시)
+관리자 PowerShell 에서 한 번: `cd D:\OCR_Score_app ; .\install_service.ps1` (다시 실행해도 안전)
+- **OCR_Score_Server**: 부팅 때 자동 시작(SYSTEM), 실행 시간 제한 없음(작업 스케줄러 기본 72시간 제한 해제), `run_server.ps1` 이 서버가 종료되면 5초 뒤 자동 재시작, 작업 자체가 실패해도 1분 뒤 재시작
+- **OCR_Score_Watchdog**: 5분마다 `http://127.0.0.1:5000/healthz` 확인 -> 꺼졌거나 응답이 없으면 되살림 (기록: `data\server.log` 의 [감시] 줄)
+- 로그 `data\server.log` 는 20MB 가 넘으면 `server.log.1` 로 보관
+- 업데이트 방법: `git pull` -> `Get-NetTCPConnection -LocalPort 5000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }` (감독자가 새 코드로 자동 재시작)
