@@ -27,7 +27,8 @@ Register-ScheduledTask -TaskName 'OCR_Score_Watchdog' -Action $act2 -Trigger $tr
 
 # 지금 바로 (재)시작: 실행 중인 작업을 먼저 멈추고(이미 실행 중이면 새 시작이 거부되므로), 5000번 포트의 기존 채점 서버만 종료한 뒤 다시 시작
 Stop-ScheduledTask -TaskName 'OCR_Score_Server' -ErrorAction SilentlyContinue
-Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+# (이미 종료된 프로세스를 종료하려 해도 오류로 중단되지 않게 try/catch + SilentlyContinue)
+try { Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } } catch {}
 Start-Sleep -Seconds 3
 Start-ScheduledTask -TaskName 'OCR_Score_Server'
 Write-Host '서버를 시작하는 중입니다 (처음에는 최대 90초 걸릴 수 있습니다)...'

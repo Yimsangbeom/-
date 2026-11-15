@@ -75,4 +75,4 @@
 - **OCR_Score_Watchdog**: 5분마다 `http://127.0.0.1:5000/healthz` 확인 -> 꺼졌거나 응답이 없으면 되살림 (기록: `data\server.log` 의 [감시] 줄)
 - 감시는 30초 간격으로 3번 연속 실패했을 때만 조치(대량 채점 중 일시 지연 오판 방지). 채점(이미지 판독)은 전체 잠금 밖에서 하므로 채점 중에도 결과/통계/상태 확인이 막히지 않음(`python test_concurrency.py`로 검증)
 - 로그 `data\server.log` 는 20MB 가 넘으면 `server.log.1` 로 보관
-- 업데이트 방법: `git pull` -> `Get-NetTCPConnection -LocalPort 5000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }` (감독자가 새 코드로 자동 재시작)
+- 업데이트 방법: `git pull` -> `Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }` (감독자가 새 코드로 자동 재시작)
