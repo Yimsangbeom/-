@@ -37,16 +37,16 @@
         </ul>
         <div class="space-y-4 border-t pt-4">
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">문항당 배점</label>
-            <input id="cfg-score" type="number" value="1" step="0.5" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">문항당 배점 <span id="score-info" class="text-xs font-normal text-slate-500">(과목 만점 100점 · 총점 만점 500점)</span></label>
+            <input id="cfg-score" type="number" value="5" step="0.5" min="0.5" oninput="updateScoreInfo()" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">합격 총점 <span class="text-xs font-normal text-slate-500">(총점이 이 점수 이상이면 합격)</span></label>
-            <input id="cfg-cutoff" type="number" value="60" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">합격 총점 <span class="text-xs font-normal text-slate-500">(과락이 없고 총점이 이 점수 이상이면 합격)</span></label>
+            <input id="cfg-cutoff" type="number" value="300" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(총점이 이 점수 미만이면 과락, 0=사용 안 함)</span></label>
-            <input id="cfg-failcut" type="number" value="40" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(한 과목이라도 이 점수 미만이면 과락·불합격, 0=사용 안 함)</span></label>
+            <input id="cfg-subfail" type="number" value="40" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
             <label class="font-semibold text-sm">마킹 인식 민감도 (0.50~0.85, 기본 0.65)</label>
@@ -75,13 +75,13 @@
         <h2 class="text-lg font-bold mb-1">🧪 테스트용 가상 답안지</h2>
         <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 🧪 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
         <div class="flex flex-wrap gap-2 mb-4">
-          <button onclick="runTest()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-lg">▶ 테스트 실행 (가상 답안지 4장 자동 채점)</button>
+          <button onclick="runTest()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-lg">▶ 테스트 실행 (가상 답안지 5장 자동 채점)</button>
           <button onclick="clearTest()" class="bg-slate-400 hover:bg-slate-500 text-white font-bold px-5 py-2.5 rounded-lg">🗑️ 테스트 결과만 삭제</button>
         </div>
         <div class="text-sm font-semibold mb-2">가상 답안지 파일 (클릭하면 원본을 볼 수 있습니다)</div>
         <ul id="test-files" class="text-sm space-y-1 text-slate-700"></ul>
         <div class="text-sm font-semibold mt-4 mb-2">준비된 가상 수험생 (정답 기록)</div>
-        <table class="w-full text-xs text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">수험번호</th><th class="p-2 border">유형</th><th class="p-2 border">기대 점수</th><th class="p-2 border text-left">내용</th></tr></thead><tbody id="test-students"></tbody></table>
+        <table class="w-full text-xs text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">수험번호</th><th class="p-2 border">유형</th><th class="p-2 border">기대 총점</th><th class="p-2 border text-left">내용</th></tr></thead><tbody id="test-students"></tbody></table>
       </div>
     </section>
 
@@ -186,10 +186,14 @@
     }
     async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
 
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, fail_cutoff: 40, threshold: 0.65 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 5, pass_cutoff: 300, subject_fail_cutoff: 40, threshold: 0.65 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+    function updateScoreInfo() {
+      const v = parseFloat(document.getElementById('cfg-score').value) || 0;
+      document.getElementById('score-info').innerText = `(과목 만점 ${+(v * 20).toFixed(1)}점 · 총점 만점 ${+(v * 100).toFixed(1)}점)`;
+    }
     function showTab(t) {
       ['home', 'grade', 'result'].forEach(id => {
         document.getElementById('tab-' + id).classList.toggle('hidden', id !== t);
@@ -204,7 +208,8 @@
       currentConfig = await res.json();
       document.getElementById('cfg-score').value = currentConfig.score_per_q;
       document.getElementById('cfg-cutoff').value = currentConfig.pass_cutoff;
-      document.getElementById('cfg-failcut').value = currentConfig.fail_cutoff;
+      document.getElementById('cfg-subfail').value = currentConfig.subject_fail_cutoff;
+      updateScoreInfo();
       document.getElementById('cfg-th').value = currentConfig.threshold;
       renderKeySummary();
     }
@@ -221,7 +226,7 @@
     async function saveConfig() {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_cutoff = parseFloat(document.getElementById('cfg-cutoff').value);
-      currentConfig.fail_cutoff = parseFloat(document.getElementById('cfg-failcut').value) || 0;
+      currentConfig.subject_fail_cutoff = parseFloat(document.getElementById('cfg-subfail').value) || 0;
       currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
       await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
       alert('설정이 저장되었습니다. 이미 채점된 결과도 새 기준으로 다시 판정됩니다.');
@@ -301,7 +306,8 @@
       return t + esc(item.filename) + v;
     }
     function subCell(item, code) {
-      return `<td class="p-2">${item.subject_scores[code]}</td>`;
+      const bad = (item.fail_subjects || []).includes(code);
+      return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}${bad ? ' ⚠' : ''}</td>`;
     }
     async function refreshResults() {
       const res = await fetch('/api/results');
@@ -324,13 +330,13 @@
       const n = r => gradedList.filter(x => x.result === r).length, nt = gradedList.filter(x => x.is_test).length;
       document.getElementById('result-summary').innerHTML = `총 응시자: ${gradedList.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
         + (nt ? ` <span class="text-xs font-normal text-violet-600">(🧪 테스트 ${nt}건 포함)</span>` : '')
-        + `<div class="text-xs font-normal text-slate-500">합격 ${currentConfig.pass_cutoff}점 이상 · 불합격 ${currentConfig.fail_cutoff}~${currentConfig.pass_cutoff}점 미만 · 과락 ${currentConfig.fail_cutoff}점 미만 (총점 기준)</div>`;
+        + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 총점 ${currentConfig.pass_cutoff}점 이상 (과목 만점 ${currentConfig.score_per_q * 20} / 총점 만점 ${currentConfig.score_per_q * 100})</div>`;
     }
 
     async function loadTestInfo() {
       const d = await (await fetch('/api/test/info')).json();
       document.getElementById('test-files').innerHTML = d.files.map(f => `<li>📄 <a class="text-blue-700 underline" href="/samples/${f.file}" target="_blank">${f.file}</a> <span class="text-slate-500">— ${esc(f.desc)}</span></li>`).join('');
-      document.getElementById('test-students').innerHTML = d.students.map(s => `<tr class="border-b"><td class="p-2 font-mono">${s.student_id}</td><td class="p-2">${s.exam_type}</td><td class="p-2 font-bold">${s.expected_score}</td><td class="p-2 text-left">${esc(s.desc)}</td></tr>`).join('');
+      document.getElementById('test-students').innerHTML = d.students.map(s => `<tr class="border-b"><td class="p-2 font-mono">${s.student_id}</td><td class="p-2">${s.exam_type}</td><td class="p-2 font-bold">${s.expected_correct * currentConfig.score_per_q}</td><td class="p-2 text-left">${esc(s.desc)}</td></tr>`).join('');
     }
     async function runTest() {
       const r = await fetch('/api/test/run', { method: 'POST' });
@@ -358,8 +364,7 @@
       refreshResults();
     }
 
-    loadConfig().then(refreshResults);
-    loadTestInfo();
+    loadConfig().then(() => { refreshResults(); loadTestInfo(); });
   </script>
 </body>
 </html>

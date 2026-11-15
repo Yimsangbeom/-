@@ -73,8 +73,8 @@ if __name__ == '__main__':
         ('검수.png', make_sheet('A', '111111111', key, blanks=(10, 20), doubles=(30,)))]]
     j = c.post('/api/grade/students', data=dict(files=files)).get_json()
     res = {x['filename']: x for x in j['results']}
-    assert res['만점.png']['total_score'] == 100 and res['만점.png']['student_id'] == '123456789' and not res['만점.png']['needs_review'], res['만점.png']
-    assert res['오답5.png']['total_score'] == 95 and res['오답5.png']['student_id'] == '987654321'
+    assert res['만점.png']['total_score'] == 500 and res['만점.png']['student_id'] == '123456789' and not res['만점.png']['needs_review'], res['만점.png']
+    assert res['오답5.png']['total_score'] == 475 and res['오답5.png']['student_id'] == '987654321'
     assert res['검수.png']['blank_count'] == 2 and res['검수.png']['multi_count'] == 1 and res['검수.png']['needs_review']
     print('채점 OK:', {k: v['total_score'] for k, v in res.items()})
 

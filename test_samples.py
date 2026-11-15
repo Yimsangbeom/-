@@ -19,7 +19,7 @@ for t in "AB":   # 정답지 인식
     print(f"마스터 {t}형 인식: {ok}/100 일치, 문제문항={j['problems']}")
     assert ok == 100
 
-files = [(open(f"{out}/{n}", "rb"), n) for n in ("student1.jpg", "student2.jpg", "batch_student3_4.pdf")]
+files = [(open(f"{out}/{n}", "rb"), n) for n in ("student1.jpg", "student2.jpg", "student5.jpg", "batch_student3_4.pdf")]
 j = c.post("/api/grade/students", data={"files": files}).get_json()
 print("오류:", j["errors"]); assert not j["errors"]
 res = {r["student_id"]: r for r in j["results"]}
@@ -34,9 +34,9 @@ for name, tr in truth.items():
         exp_ans[str(q)] = "무표기" if not m else ("이중" if len(m) > 1 else str(m[0]))
         exp_score += len(m) == 1 and m[0] == tr["key"][q - 1]
     wrong_q = [q for q in exp_ans if r["student_answers"].get(q) != exp_ans[q]]
-    st = "OK " if (not wrong_q and r["total_score"] == exp_score and r["exam_type"] == tr["exam_type"]) else "NG "
+    st = "OK " if (not wrong_q and r["total_score"] / 5 == exp_score and r["exam_type"] == tr["exam_type"]) else "NG "
     bad += st == "NG "
-    print(f"{st}{name}: 유형 {r['exam_type']}(기대 {tr['exam_type']}) 점수 {r['total_score']:.0f}(기대 {exp_score}) "
+    print(f"{st}{name}: 유형 {r['exam_type']}(기대 {tr['exam_type']}) 맞힌 개수 {r['total_score'] / 5:.0f}(기대 {exp_score}) 점수 {r['total_score']:.0f} "
           f"무표기 {r['blank_count']} 이중 {r['multi_count']} 검수필요={r['needs_review']} 오인식문항={wrong_q}")
 print("RESULT:", "ALL OK" if not bad else f"{bad}건 불일치")
 sys.exit(1 if bad else 0)

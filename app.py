@@ -33,9 +33,10 @@ state = {
         "A": [(i % 5) + 1 for i in range(100)],
         "B": [((i + 2) % 5) + 1 for i in range(100)],
     },
-    "score_per_q": 1.0,
-    "pass_cutoff": 60.0,      # 합격 총점(이상이면 합격)
-    "fail_cutoff": 40.0,      # 과락 점수: 전체 총점이 이 점수 미만이면 과락(0=사용 안 함)
+    "score_per_q": 5.0,           # 문항당 배점: 20문항 x 5점 = 과목 100점, 5과목 = 총점 500점
+    "pass_cutoff": 300.0,         # 합격 총점(이상이면 합격, 과락이 없을 때) = 500점의 60%
+    "subject_fail_cutoff": 40.0,  # 과락 점수: 한 과목이라도 이 점수 미만이면 과락(0=사용 안 함)
+    "schema": 2,
     "threshold": 0.65,
 }
 graded_results = []
@@ -57,6 +58,11 @@ def load_all():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, encoding="utf-8") as f:
             state.update(json.load(f))
+        if state.get("schema") != 2:   # 이전 버전(총점 100점 기준) 설정 → 500점 기준 기본값으로 이전
+            state.update({"score_per_q": 5.0, "pass_cutoff": 300.0, "subject_fail_cutoff": 40.0, "schema": 2})
+            if float(state.get("threshold", 0)) < 0.6:
+                state["threshold"] = 0.65
+            save_state()
     if os.path.exists(RESULTS_FILE):
         with open(RESULTS_FILE, encoding="utf-8") as f:
             data = json.load(f)
@@ -76,13 +82,24 @@ def save_upload(file_storage):
     return path
 
 
+SUBJECT_CODES = ("A", "B", "C", "D", "E")
+
+
+def scaled(item):
+    """저장된 '맞힌 개수'에 현재 문항당 배점을 곱해 점수를 계산한다(배점을 바꿔도 즉시 반영)."""
+    spq = state["score_per_q"]
+    counts = item.get("subject_correct") or item.get("subject_scores", {})
+    scores = {c: counts.get(c, 0) * spq for c in SUBJECT_CODES}
+    return {**item, "subject_scores": scores, "total_score": sum(scores.values())}
+
+
 def judge(item):
-    """현재 설정으로 판정: 총점 < 과락 점수 → 과락, 총점 < 합격 총점 → 불합격, 그 외 합격.
-    설정을 바꾸면 이미 채점된 결과도 즉시 다시 판정된다."""
-    total = item["total_score"]
-    if state["fail_cutoff"] > 0 and total < state["fail_cutoff"]:
-        return "과락"
-    return "불합격" if total < state["pass_cutoff"] else "합격"
+    """item 은 scaled() 결과. 한 과목이라도 과락 점수 미만 → 과락, 그 외 총점이 합격 총점 이상 → 합격, 아니면 불합격."""
+    cut = state["subject_fail_cutoff"]
+    fails = [c for c in SUBJECT_CODES if cut > 0 and item["subject_scores"][c] < cut]
+    if fails:
+        return "과락", fails
+    return ("불합격" if item["total_score"] < state["pass_cutoff"] else "합격"), []
 
 
 def make_result(res, page_label, is_test=False, verify=None):
@@ -97,8 +114,7 @@ def make_result(res, page_label, is_test=False, verify=None):
         "filename": page_label,
         "exam_type": res["exam_type"],
         "student_id": res["student_id"],
-        "subject_scores": res["subject_scores"],
-        "total_score": res["total_score"],
+        "subject_correct": {c: int(round(v)) for c, v in res["subject_scores"].items()},  # 맞힌 개수(배점 1점 기준)
         "correct_count": res["correct_count"],
         "multi_count": res["multi_count"],
         "blank_count": res["blank_count"],
@@ -141,8 +157,8 @@ def handle_config():
             state["score_per_q"] = float(data["score_per_q"])
         if "pass_cutoff" in data:
             state["pass_cutoff"] = float(data["pass_cutoff"])
-        if "fail_cutoff" in data:
-            state["fail_cutoff"] = max(0.0, float(data["fail_cutoff"]))
+        if "subject_fail_cutoff" in data:
+            state["subject_fail_cutoff"] = max(0.0, float(data["subject_fail_cutoff"]))
         if "threshold" in data:
             state["threshold"] = float(data["threshold"])
             engine.fill_threshold = state["threshold"]
@@ -201,7 +217,7 @@ def grade_students():
                 errors.append(f"{shown}: 이미지를 읽을 수 없습니다.")
             for label, img_bgr in pages:
                 with lock:
-                    res = engine.grade_sheet(img_bgr, state["answer_keys"], state["score_per_q"])
+                    res = engine.grade_sheet(img_bgr, state["answer_keys"], 1.0)
                     # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
                     new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown)))
         except Exception as e:
@@ -217,7 +233,9 @@ def grade_students():
 
 
 def with_judge(item):
-    return {**item, "result": judge(item)}
+    sc = scaled(item)
+    status, fails = judge(sc)
+    return {**sc, "result": status, "fail_subjects": fails}
 
 
 @app.route("/api/results", methods=["GET", "DELETE"])
@@ -251,7 +269,7 @@ def test_info():
     with open(os.path.join(SAMPLE_DIR, "truth.json"), encoding="utf-8") as f:
         meta = json.load(f)
     return jsonify({"files": meta["files"], "students": [
-        {"student_id": k, "desc": v["desc"], "exam_type": v["exam_type"], "expected_score": v["score"]}
+        {"student_id": k, "desc": v["desc"], "exam_type": v["exam_type"], "expected_correct": v["score"]}
         for k, v in meta["students"].items()]})
 
 
@@ -266,12 +284,12 @@ def test_run():
     with lock:
         for fn in meta["run_files"]:
             for label, img in load_pages_from_file(os.path.join(SAMPLE_DIR, fn)):
-                res = engine.grade_sheet(img, meta["keys"], state["score_per_q"])
+                res = engine.grade_sheet(img, meta["keys"], 1.0)
                 exp = meta["students"].get(res["student_id"])
                 verify = None
                 if exp:
                     ok = sum(res["student_answers"].get(int(q)) == a for q, a in exp["answers"].items())
-                    verify = {"match": ok, "total": 100, "expected_score": exp["score"], "desc": exp["desc"]}
+                    verify = {"match": ok, "total": 100, "expected_correct": exp["score"], "desc": exp["desc"]}
                 new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify))
         graded_results = [r for r in graded_results if not r.get("is_test")] + new   # 이전 테스트 결과는 교체
         save_results()
@@ -283,8 +301,11 @@ def export_excel():
     with lock:
         if not graded_results:
             return jsonify({"status": "error", "message": "채점 결과가 없습니다."}), 400
+        spq = state["score_per_q"]
+        smax, tmax = 20 * spq, 100 * spq
         rows, detail = [], []
-        for item in graded_results:
+        for raw in graded_results:
+            item = with_judge(raw)
             ss = item["subject_scores"]
             rows.append({
                 "구분": "테스트" if item.get("is_test") else "",
@@ -292,13 +313,15 @@ def export_excel():
                 "파일명": item["filename"],
                 "문제유형": item["exam_type"],
                 "수험번호": item["student_id"],
-                "A.인터넷중독의 이해(20)": ss["A"],
-                "B.진단과 평가(20)": ss["B"],
-                "C.상담기법(20)": ss["C"],
-                "D.상담의 이론과 실제(20)": ss["D"],
-                "E.정책과 법(20)": ss["E"],
-                "총점(100)": item["total_score"],
-                "판정": judge(item),
+                f"A.인터넷중독의 이해({smax:g})": ss["A"],
+                f"B.진단과 평가({smax:g})": ss["B"],
+                f"C.상담기법({smax:g})": ss["C"],
+                f"D.상담의 이론과 실제({smax:g})": ss["D"],
+                f"E.정책과 법({smax:g})": ss["E"],
+                f"총점({tmax:g})": item["total_score"],
+                "평균": round(item["total_score"] / 5, 1),
+                "판정": item["result"],
+                "과락과목": ",".join(item["fail_subjects"]),
                 "무표기": item["blank_count"],
                 "이중마킹": item["multi_count"],
                 "검수필요여부": "검수필요" if item["needs_review"] else "정상",

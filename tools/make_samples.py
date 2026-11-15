@@ -69,6 +69,12 @@ def make_all(form_pdf, outdir, seed=7):
             mk[q] = []
         return mk
 
+    def marks_from_rng(key, r, wrong_qs):
+        mk = {q: [key[q - 1]] for q in range(1, 101)}
+        for q in wrong_qs:
+            mk[q] = [key[q - 1] % 5 + 1]
+        return mk
+
     truth, files = {}, {}
     # 마스터(정답) 답안지 A/B
     for t in "AB":
@@ -82,13 +88,19 @@ def make_all(form_pdf, outdir, seed=7):
         ("student4", "A", "202600004", marks_from(keys["A"], wrong=6), dict(rot=0.7, shift=(20, 15), blur=1.0, noise=6),
          {q: 120 for q in range(1, 9)}),   # 연필처럼 연하게 마킹한 8문항
     ]
+    # student5: 3과목(C)만 13문항 오답 → 과목 점수 낮음(과락 확인용). 앞 학생들의 난수 흐름을 바꾸지 않도록 별도 난수 사용
+    rng5 = random.Random(seed * 13 + 5)
+    mk5 = marks_from_rng(keys["A"], rng5, rng5.sample(range(41, 61), 13))
+    specs.append(("student5", "A", "202600005", mk5, dict(rot=-0.6, shift=(-8, 6)), None))
     imgs = {}
     for name, t, sid, mk, opt, gm in specs:
-        sheet, jpg = scan(draw_sheet(blank, t, sid, mk, rng, gm), rng, **opt)
+        r_ = rng5 if name == "student5" else rng
+        sheet, jpg = scan(draw_sheet(blank, t, sid, mk, r_, gm), r_, **opt)
         imgs[name] = (sheet, jpg)
         truth[name] = dict(exam_type=t, student_id=sid, marks=mk, key=keys[t])
     files["student1.jpg"] = imgs["student1"][1]
     files["student2.jpg"] = imgs["student2"][1]
+    files["student5.jpg"] = imgs["student5"][1]
     doc = fitz.open()                      # student3, student4 는 2쪽짜리 PDF 한 파일
     for n in ("student3", "student4"):
         h, w = imgs[n][0].shape[:2]
@@ -105,6 +117,7 @@ def make_all(form_pdf, outdir, seed=7):
         "student2": "A형 · 10문항 오답, 약간 기울어진 스캔",
         "student3": "B형 · 15문항 오답 + 무표기 3 + 이중마킹 2 (검수필요 표시 확인용), 기울어짐",
         "student4": "A형 · 6문항 오답, 연필처럼 연한 마킹 8문항, 흐릿한 스캔",
+        "student5": "A형 · 3과목(C) 13문항 오답 → 해당 과목 35점(과락 확인용), 나머지는 만점",
     }
     students = {}
     for name, tr in truth.items():
@@ -120,8 +133,9 @@ def make_all(form_pdf, outdir, seed=7):
                       {"file": "master_B.jpg", "desc": "B형 정답 답안지 (정답 자동 인식용)"},
                       {"file": "student1.jpg", "desc": desc["student1"]},
                       {"file": "student2.jpg", "desc": desc["student2"]},
+                      {"file": "student5.jpg", "desc": desc["student5"]},
                       {"file": "batch_student3_4.pdf", "desc": "PDF 한 파일에 2쪽: " + desc["student3"].split(" (")[0] + " / " + desc["student4"].split(",")[0]}],
-            "run_files": ["student1.jpg", "student2.jpg", "batch_student3_4.pdf"]}
+            "run_files": ["student1.jpg", "student2.jpg", "student5.jpg", "batch_student3_4.pdf"]}
     with open(os.path.join(outdir, "truth.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False)
     return truth, keys
