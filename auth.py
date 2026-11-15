@@ -23,6 +23,7 @@ MAX_FAILS = 5          # 연속 실패 허용 횟수
 LOCK_SECONDS = 300     # 초과 시 해당 IP 잠금(초)
 _fails = {}            # ip -> [횟수, 잠금해제시각]
 PUBLIC_PATHS = {"/login", "/api/login", "/api/auth/status", "/api/setup"}
+PUBLIC_PREFIXES = ("/fonts/", "/vendor/")   # 글꼴/스타일 파일(비밀 아님) - 로그인 화면에서도 필요
 
 
 def _paths(data_dir):
@@ -112,7 +113,7 @@ def init_auth(app, data_dir, static_dir):
 
     @app.before_request
     def require_login():
-        if request.path in PUBLIC_PATHS or logged_in():
+        if request.path in PUBLIC_PATHS or request.path.startswith(PUBLIC_PREFIXES) or logged_in():
             return None
         if request.path.startswith("/api/") or request.path.startswith("/results/"):
             return jsonify({"status": "error", "message": "로그인이 필요합니다."}), 401

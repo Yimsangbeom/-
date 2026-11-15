@@ -24,3 +24,10 @@
 - 채점 서버: `127.0.0.1:5000` (외부 직접 접속 불가) — `run.bat`
 - 기존 nginx(80/443)에 `nginx_ocr.conf.example` 의 server 블록을 추가하고 `nginx -t` 통과 후 `nginx -s reload`
 - 인증서는 ocr.ehancom.com 이 포함된 것(와일드카드 또는 신규 발급) 사용
+
+## 폐쇄망 지원 (외부 사이트 사용 안 함)
+화면에 필요한 모든 파일이 서버 안에 있습니다. (인터넷 없이도 동작)
+- 글꼴: `static/fonts/noto-sans-kr/` (Noto Sans KR 400/500/700, SIL OFL 라이선스)
+- 스타일: `static/vendor/tailwind.css` (미리 빌드), 엑셀: `static/vendor/xlsx.full.min.js`
+- `index.html`/`login.html` 의 클래스를 바꾸면 스타일을 다시 만들어야 합니다 (개발 PC에서 Node 필요):
+  `npm i -D tailwindcss@3.4.17` → `npx tailwindcss -c tailwind.config.js -i tailwind.input.css -o static/vendor/tailwind.css --minify`
