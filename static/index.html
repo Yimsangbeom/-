@@ -40,8 +40,8 @@
             <input id="cfg-cutoff" type="number" value="60" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">마킹 인식 민감도 (0.25~0.55)</label>
-            <input id="cfg-th" type="number" value="0.38" step="0.02" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">마킹 인식 민감도 (0.40~0.65, 기본 0.5)</label>
+            <input id="cfg-th" type="number" value="0.5" step="0.02" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <button onclick="saveConfig()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2.5 rounded-lg">설정 저장하기</button>
         </div>
@@ -135,7 +135,7 @@
   </main>
 
   <script>
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, threshold: 0.38 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, threshold: 0.5 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 

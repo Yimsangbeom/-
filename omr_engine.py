@@ -73,7 +73,7 @@ class OMREngine:
     def __init__(self, config=None):
         self.cfg = config or DEFAULT_CONFIG
         self.cw, self.ch = self.cfg['canonical_size']
-        self.fill_threshold = 0.38
+        self.fill_threshold = 0.50
 
     def align_image(self, img_bgr):
         resized = cv2.resize(img_bgr, (self.cw, self.ch), interpolation=cv2.INTER_CUBIC)

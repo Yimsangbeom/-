@@ -1,0 +1,7 @@
+# HTTPS 자동 발급/갱신(Let's Encrypt). 80/443 포트가 비어 있고 방화벽에서 열려 있어야 함
+ocr.ehancom.com {
+	request_body {
+		max_size 1GB
+	}
+	reverse_proxy 127.0.0.1:8000
+}

@@ -35,7 +35,7 @@ state = {
     },
     "score_per_q": 1.0,
     "pass_cutoff": 60.0,
-    "threshold": 0.38,
+    "threshold": 0.50,
 }
 graded_results = []
 next_id = 0
@@ -257,6 +257,8 @@ def export_excel():
 if __name__ == "__main__":
     # debug=True 는 외부 공개 서버에서 원격 코드 실행 위험이 있어 사용하지 않는다.
     from waitress import serve
-    port = int(os.environ.get("PORT", "80"))
-    print(f"OMR 채점 서버 시작: http://0.0.0.0:{port}")
-    serve(app, host="0.0.0.0", port=port, threads=4)
+    # 기본은 내부(127.0.0.1:8000)에서만 대기하고, 외부 접속은 Caddy(HTTPS)가 받아 전달한다.
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    print(f"OMR 채점 서버 시작: http://{host}:{port}")
+    serve(app, host=host, port=port, threads=4)
