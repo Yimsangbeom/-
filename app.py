@@ -306,6 +306,22 @@ def handle_results():
         return jsonify({"status": "success"})
 
 
+@app.route("/api/results/delete", methods=["POST"])
+def delete_selected():
+    """선택한 답안지 결과(번호 목록)만 삭제."""
+    global graded_results
+    ids = {int(x) for x in (request.get_json(silent=True) or {}).get("ids", [])}
+    with lock:
+        gone = [r for r in graded_results if r["id"] in ids]
+        for r in gone:
+            p = os.path.join(RESULT_DIR, os.path.basename(r.get("vis_url", "")))
+            if os.path.isfile(p):
+                os.remove(p)
+        graded_results = [r for r in graded_results if r["id"] not in ids]
+        store.delete_results(ids=[r["id"] for r in gone])
+    return jsonify({"status": "success", "deleted": len(gone)})
+
+
 @app.route("/api/system")
 def api_system():
     """저장 위치/건수 (홈 화면 '데이터 관리'에 표시)."""

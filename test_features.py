@@ -95,6 +95,15 @@ c.post("/api/grade/students", data={"files": [(open(p, "rb"), "real.png")]})
 assert len(c.get("/api/results").get_json()) == 6
 c.delete("/api/results?scope=test")
 left = c.get("/api/results").get_json(); assert len(left) == 1 and not left[0]["is_test"]
+# 선택 삭제: 지정한 답안지만 삭제(이미지 포함), 나머지는 유지
+c.post("/api/test/run"); allr = c.get("/api/results").get_json(); assert len(allr) == 6
+tests_ = [x for x in allr if x["is_test"]]; victim = [tests_[0]["id"], tests_[2]["id"]]
+r = c.post("/api/results/delete", json={"ids": victim}).get_json(); assert r["deleted"] == 2
+left = c.get("/api/results").get_json(); assert len(left) == 4 and not (set(victim) & {x["id"] for x in left})
+assert c.get(tests_[0]["vis_url"]).status_code == 404 and c.get(tests_[1]["vis_url"]).status_code == 200
+assert c.post("/api/results/delete", json={"ids": [99999]}).get_json()["deleted"] == 0
+assert app.test_client().post("/api/results/delete", json={"ids": [1]}).status_code == 401     # 로그인 없이는 불가
+c.delete("/api/results?scope=test")
 sysinfo = c.get("/api/system").get_json()
 assert sysinfo["kind"] in ("SQLite", "PostgreSQL") and sysinfo["counts"] == {"real": 1, "test": 0}, sysinfo
 c.delete("/api/results"); assert c.get("/api/system").get_json()["counts"] == {"real": 0, "test": 0} and c.get("/api/results").get_json() == []   # 전체 삭제
