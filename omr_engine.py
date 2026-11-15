@@ -75,6 +75,18 @@ class OMREngine:
         self.cfg = config or DEFAULT_CONFIG
         self.cw, self.ch = self.cfg['canonical_size']
         self.fill_threshold = 0.65
+        self.qpos = self._build_question_positions(self.cfg)
+
+    @staticmethod
+    def _build_question_positions(cfg):
+        """문항 번호(1부터) -> 선택지별 마킹칸 중심 [(x, y), ...].
+        answer_blocks(블록마다 x/y 따로) 가 있으면 그것을, 없으면 기존 방식(블록 모두 같은 y 행)을 쓴다. 문항은 블록 순서대로 이어서 번호가 붙는다."""
+        blocks = cfg.get('answer_blocks')
+        if not blocks:
+            per = cfg.get('choices_per_block', 5)
+            xs, ys = cfg['answer_grid']['x_cols'], cfg['answer_grid']['y_rows']
+            blocks = [{'x_cols': xs[i * per:(i + 1) * per], 'y_rows': ys} for i in range(len(xs) // per)]
+        return [[(x, y) for x in b['x_cols']] for b in blocks for y in b['y_rows']]
 
     @staticmethod
     def _order_corners(pts):
@@ -90,12 +102,45 @@ class OMREngine:
         pts = approx.reshape(-1, 2) if len(approx) == 4 else cv2.boxPoints(cv2.minAreaRect(contour))
         return self._order_corners(pts)
 
+    def _align_by_anchors(self, resized, contours):
+        """자동 인식된 양식용: 기준 사각 프레임(anchors)을 스캔에서 찾아 호모그래피로 보정."""
+        src, dst = [], []
+        for a in self.cfg['anchors']:
+            ref = np.float32(a['corners'])
+            rw, rh = a['size']
+            rc = ref.mean(axis=0)
+            best = None
+            for c in contours:
+                x, y, bw, bh = cv2.boundingRect(c)
+                if abs(bw - rw) > 0.12 * rw or abs(bh - rh) > 0.12 * rh:
+                    continue
+                dist = float(np.hypot(x + bw / 2 - rc[0], y + bh / 2 - rc[1]))
+                if dist > 0.15 * max(self.cw, self.ch):
+                    continue
+                if best is None or dist < best[0]:
+                    best = (dist, c)
+            if best:
+                src.append(self._box_corners(best[1]))
+                dst.append(ref)
+        if not src:
+            return resized
+        src, dst = np.vstack(src), np.vstack(dst)
+        H, _ = cv2.findHomography(src, dst, 0)
+        if H is None:
+            return resized
+        mapped = cv2.perspectiveTransform(src.reshape(-1, 1, 2), H).reshape(-1, 2)
+        if np.abs(mapped - dst).max() > 80:
+            return resized
+        return cv2.warpPerspective(resized, H, (self.cw, self.ch), borderValue=(255, 255, 255))
+
     def align_image(self, img_bgr):
         """답안 상자와 수험번호 상자의 8개 모서리로 호모그래피를 구해 기울기/이동/원근을 보정한다."""
         resized = cv2.resize(img_bgr, (self.cw, self.ch), interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if self.cfg.get('anchors'):
+            return self._align_by_anchors(resized, contours)
         ans_c, id_c = None, None
         for c in contours:
             x, y, bw, bh = cv2.boundingRect(c)
@@ -154,7 +199,9 @@ class OMREngine:
 
         # 문제 유형 표시칸: 시험에서 쓰는 유형만 인식 (그 외 칸은 무시)
         forms = [f for f in exam['forms'] if f in self.cfg['type_bubbles']]
-        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in forms]
+        if len(exam['forms']) == 1 or len(forms) < len(exam['forms']):     # 유형이 하나(또는 양식에 표시칸이 없음)면 그 유형
+            forms = [exam['forms'][0]]
+        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in forms] if len(forms) > 1 else []
         marked_types = [forms[i] for i in self.pick_marked(type_ratios, th)] if len(forms) > 1 else []
         if len(forms) == 1:                      # 유형이 하나면 표시 여부와 관계없이 그 유형
             exam_type, type_status = forms[0], '정상'
@@ -162,7 +209,7 @@ class OMREngine:
             exam_type, type_status = marked_types[0], '정상'
         else:
             exam_type, type_status = forms[0], '유형오류'
-        for t_code in forms:
+        for t_code in (forms if len(forms) > 1 else []):
             tx, ty = self.cfg['type_bubbles'][t_code]
             color = (0, 180, 0) if t_code == exam_type and type_status == '정상' else (0, 165, 255)
             if t_code in marked_types or type_status != '정상':
@@ -183,19 +230,18 @@ class OMREngine:
 
         n_q, n_ch = exam_mod.total_questions(exam), exam['choices']
         ans_key = answer_key_dict.get(exam_type, answer_key_dict.get(forms[0], [1] * n_q))
-        x_cols, y_rows = self.cfg['answer_grid']['x_cols'], self.cfg['answer_grid']['y_rows']
-        per_block, rows = self.cfg.get('choices_per_block', 5), len(y_rows)
+        if n_q > len(self.qpos):
+            raise ValueError(f"시험 문항 수({n_q})가 답안지 양식 용량({len(self.qpos)})을 넘습니다.")
         codes = exam_mod.codes(exam)
         student_answers, subject_scores = {}, {c: 0.0 for c in codes}
         multi_count, blank_count, correct_count = 0, 0, 0
 
         for q_num in range(1, n_q + 1):
-            block, row = divmod(q_num - 1, rows)
-            col_base, cy = block * per_block, y_rows[row]
+            centers = self.qpos[q_num - 1][:n_ch]
             code = codes[exam_mod.subject_index(exam, q_num)]
             correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
-            row_ratios = [self.get_bubble_ratio(binary, x_cols[col_base + c_i], cy, r) for c_i in range(n_ch)]
-            marked = [(c_i + 1, x_cols[col_base + c_i], cy) for c_i in self.pick_marked(row_ratios, th)]
+            row_ratios = [self.get_bubble_ratio(binary, cx, cy, r) for cx, cy in centers]
+            marked = [(c_i + 1, centers[c_i][0], centers[c_i][1]) for c_i in self.pick_marked(row_ratios, th)]
             if len(marked) == 1:
                 chosen, m_cx, m_cy = marked[0]
                 student_answers[q_num] = str(chosen)
@@ -206,7 +252,7 @@ class OMREngine:
                 else:
                     cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (0, 0, 255), 3)
                     if 1 <= correct_choice <= n_ch:
-                        cv2.circle(vis_img, (int(x_cols[col_base + correct_choice - 1]), int(cy)), r, (255, 100, 0), 2)
+                        cv2.circle(vis_img, (int(centers[correct_choice - 1][0]), int(centers[correct_choice - 1][1])), r, (255, 100, 0), 2)
             elif len(marked) == 0:
                 student_answers[q_num] = '무표기'
                 blank_count += 1

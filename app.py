@@ -1,7 +1,9 @@
 import io
 import json
 import os
+import re
 import threading
+import time
 import uuid
 
 import cv2
@@ -12,6 +14,7 @@ import auth
 import db
 import excel_export
 import exam as exam_mod
+import layout_detect
 import layouts
 import stats
 from omr_engine import OMREngine, load_pages_from_file
@@ -22,6 +25,7 @@ TEMP_DIR = os.path.join(DATA_DIR, "temp")
 RESULT_DIR = os.path.join(DATA_DIR, "results")
 for d in (DATA_DIR, TEMP_DIR, RESULT_DIR):
     os.makedirs(d, exist_ok=True)
+layouts.load_user_layouts(DATA_DIR)   # 자동 인식으로 등록한 답안지 양식
 
 # 소스코드(app.py 등)가 외부에 노출되지 않도록 static 폴더만 공개한다.
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"), static_url_path="")
@@ -511,6 +515,89 @@ def export_excel():
         as_attachment=True,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+# ------------------------- 새 시험지(답안지 양식) 자동 인식 -------------------------
+DETECT_DIR = os.path.join(TEMP_DIR, "layout_detect")
+os.makedirs(DETECT_DIR, exist_ok=True)
+TOKEN_RE = re.compile(r"^[0-9a-f]{12}$")
+
+
+def _cleanup_detect_dir(max_age=86400):
+    now = time.time()
+    for f in os.listdir(DETECT_DIR):
+        p = os.path.join(DETECT_DIR, f)
+        if os.path.isfile(p) and now - os.path.getmtime(p) > max_age:
+            os.remove(p)
+
+
+@app.route("/api/layouts/detect", methods=["POST"])
+def detect_layout():
+    """빈 답안지(PDF/이미지 첫 쪽)에서 양식을 자동 인식한다. 아직 등록하지 않고 결과와 미리보기만 돌려준다."""
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
+    temp_path = save_upload(f)
+    try:
+        pages = load_pages_from_file(temp_path)
+        if not pages:
+            return jsonify({"status": "error", "message": "이미지를 읽을 수 없습니다. PDF 또는 PNG/JPG 파일을 올려 주세요."}), 400
+        _cleanup_detect_dir()
+        token = uuid.uuid4().hex[:12]
+        try:
+            cfg, summary, preview = layout_detect.detect(pages[0][1])
+        except layout_detect.DetectError as e:
+            return jsonify({"status": "error", "message": str(e), "info": e.info}), 422
+        summary["pages"] = len(pages)
+        cv2.imwrite(os.path.join(DETECT_DIR, token + ".jpg"), preview, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        shown = os.path.splitext(display_name(f))[0] or "새 시험"
+        with open(os.path.join(DETECT_DIR, token + ".json"), "w", encoding="utf-8") as fh:
+            json.dump({"config": cfg, "summary": summary, "name": shown}, fh)
+        return jsonify({"status": "success", "token": token, "summary": summary, "name": shown,
+                        "preview_url": f"/api/layouts/preview/{token}.jpg"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"인식 중 오류가 발생했습니다: {e}"}), 500
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@app.route("/api/layouts/preview/<token>.jpg")
+def layout_preview(token):
+    if not TOKEN_RE.match(token):
+        return jsonify({"status": "error", "message": "잘못된 요청입니다."}), 400
+    return send_from_directory(DETECT_DIR, token + ".jpg")
+
+
+@app.route("/api/layouts/register", methods=["POST"])
+def register_layout():
+    """인식한 양식을 등록하고, 그 양식을 쓰는 새 시험을 만든다. 과목은 정답 영역 블록 단위로 기본 구성(이후 시험 설정에서 수정)."""
+    data = request.get_json(silent=True) or {}
+    token = str(data.get("token", ""))
+    path = os.path.join(DETECT_DIR, token + ".json")
+    if not TOKEN_RE.match(token) or not os.path.isfile(path):
+        return jsonify({"status": "error", "message": "인식 결과가 없거나 만료되었습니다. 다시 인식해 주세요."}), 404
+    with open(path, encoding="utf-8") as fh:
+        det = json.load(fh)
+    cfg, sm = det["config"], det["summary"]
+    name = str(data.get("name") or det["name"]).strip() or "새 시험"
+    with lock:
+        lid = "u" + token
+        label = f"{name} (자동 인식: {sm['questions']}문항 {sm['choices']}지선다, 수험번호 {sm['id_digits']}자리" + (f", {'/'.join(sm['forms'])}형)" if sm["forms"] else ")")
+        meta = layouts.register(lid, label, cfg)
+        exam = {"name": name, "title": f"{name} 답안지", "layout": lid, "choices": sm["choices"], "id_digits": sm["id_digits"],
+                "forms": sm["forms"] or ["A"], "form_rule": "none",
+                "subjects": [{"name": f"{i + 1}영역" if len(sm["rows"]) > 1 else "전체", "short": f"{i + 1}영역" if len(sm["rows"]) > 1 else "전체", "count": r}
+                             for i, r in enumerate(sm["rows"])]}
+        try:
+            exam = exam_mod.normalize(exam, meta)
+        except ValueError as ex:
+            return jsonify({"status": "error", "message": str(ex)}), 400
+        eid = "e" + uuid.uuid4().hex[:8]
+        store.set_setting("state:" + eid, new_state(exam))
+        registry["list"].append({"id": eid, "name": name})
+        save_registry()
+    return jsonify({"status": "success", "id": eid, "layout": lid})
 
 
 # ------------------------- 시험 설정 (여러 시험 관리) -------------------------

@@ -194,7 +194,10 @@
       </div>
       <div class="grid grid-cols-1 md:grid-cols-12 gap-0 overflow-hidden">
         <div class="md:col-span-4 border-r p-4 overflow-y-auto bg-slate-50/50 max-h-[70vh]">
-          <button onclick="newExam()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg mb-3 text-sm">+ 새 시험 추가</button>
+          <button onclick="newExam()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg mb-2 text-sm">+ 새 시험 추가</button>
+          <button onclick="document.getElementById('detect-file').click()" class="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-2 rounded-lg mb-1 text-sm">+ 새 시험지 추가 (답안지로 인식)</button>
+          <p class="text-xs text-slate-500 mb-3">빈 답안지 PDF/이미지를 올리면 마킹칸 위치를 자동으로 인식해 새 양식과 새 시험을 만듭니다.</p>
+          <input id="detect-file" type="file" accept=".pdf,.png,.jpg,.jpeg" class="hidden" onchange="detectSheet(event)">
           <div id="exam-list" class="space-y-2"></div>
         </div>
         <div id="exam-form" class="md:col-span-8 p-5 overflow-y-auto max-h-[70vh]"></div>
@@ -770,6 +773,51 @@
     function removeSubject(i) { editDraft.subjects.splice(i, 1); renderExamForm(); }
     function toggleForm(f, on) { const s = new Set(editDraft.forms); on ? s.add(f) : s.delete(f); editDraft.forms = [...s].sort(); }
     function changeLayout(id) { editDraft.layout = id; const lay = layoutOf(id); editDraft.choices = Math.min(editDraft.choices, lay.choices_max); editDraft.id_digits = Math.min(editDraft.id_digits, lay.id_digits_max); editDraft.forms = editDraft.forms.filter(f => lay.forms.includes(f)); renderExamForm(); }
+    // ---------- 새 시험지 추가: 빈 답안지를 올려 양식 자동 인식 ----------
+    let detected = null;
+    async function detectSheet(e) {
+      const f = e.target.files[0]; e.target.value = '';
+      if (!f) return;
+      editId = null; renderExamList();
+      document.getElementById('exam-form').innerHTML = `<div class="p-10 text-center text-slate-600"><div class="text-lg font-bold mb-2">답안지를 인식하는 중입니다...</div><div class="text-sm">${esc(f.name)}</div></div>`;
+      const fd = new FormData(); fd.append('file', f);
+      let d;
+      try { d = await (await fetch('/api/layouts/detect', { method: 'POST', body: fd })).json(); }
+      catch (err) { d = { status: 'error', message: String(err) }; }
+      if (d.status !== 'success') {
+        document.getElementById('exam-form').innerHTML = `<div class="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm"><div class="font-bold mb-1">인식하지 못했습니다</div>${esc(d.message || '')}</div>
+          <p class="text-xs text-slate-500 mt-3">선명한(번짐/기울어짐이 적은) 빈 답안지 PDF나 이미지를 올려 주세요. 인식이 어려운 양식은 좌표를 직접 등록해야 합니다.</p>`;
+        return;
+      }
+      detected = d; renderDetected();
+    }
+    function renderDetected() {
+      const d = detected, s = d.summary;
+      const rows = s.rows.every(r => r === s.rows[0]) ? `${s.blocks}블록 x ${s.rows[0]}행` : `${s.blocks}블록 (행: ${s.rows.join(', ')})`;
+      document.getElementById('exam-form').innerHTML = `
+        <div class="mb-3"><div class="text-lg font-bold">빈 답안지 인식 결과</div><div class="text-xs text-slate-500">${esc(d.name)}${s.pages > 1 ? ' (여러 쪽 중 첫 쪽만 사용)' : ''}</div></div>
+        ${s.warnings.map(w => `<div class="mb-2 p-2 rounded bg-amber-50 border border-amber-200 text-amber-800 text-sm">${esc(w)}</div>`).join('')}
+        <ul class="text-sm space-y-1 mb-3">
+          <li>• <b>정답 영역:</b> ${rows}, 총 <b>${s.questions}문항</b>, ${s.choices}지선다</li>
+          <li>• <b>수험번호:</b> ${s.id_digits}자리</li>
+          <li>• <b>문제 유형 표시칸:</b> ${s.forms.length ? s.forms.map(f => f + '형').join(', ') : '찾지 못함 (유형 1개로 설정)'}</li>
+          <li>• <b>스캔 보정용 기준 프레임:</b> ${s.anchors}개 · 검출한 마킹칸 ${s.circles}개 · 해상도 ${s.size[0]}x${s.size[1]}</li>
+        </ul>
+        <div class="text-xs text-slate-500 mb-2">파랑=정답칸(문항 번호 표시), 주황=수험번호, 초록=문제 유형, 자홍색 테두리=보정 기준 프레임. <b>파란 문항 번호가 답안지에 인쇄된 번호와 같은 순서인지, 칸이 빠짐없이 표시됐는지 확인하세요.</b> (문항은 왼쪽 블록부터, 각 블록 위에서 아래로 번호를 붙이고, 수험번호는 위에서 아래로 0~9로 가정합니다.)</div>
+        <div class="border rounded-lg overflow-auto max-h-[380px] mb-3 bg-slate-100"><img src="${d.preview_url}" class="w-full" alt="인식 미리보기"></div>
+        <label class="text-sm font-semibold block mb-3">새 시험 이름<input id="detect-name" value="${esc(d.name)}" class="mt-1 border rounded px-3 py-2 w-full font-normal"></label>
+        <div class="flex gap-2"><button onclick="registerDetected()" class="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 py-2.5 rounded-lg">이 양식으로 새 시험 만들기</button>
+          <button onclick="loadExams()" class="px-6 py-2.5 rounded-lg border font-bold bg-white">취소</button></div>
+        <p class="text-xs text-slate-500 mt-2">과목은 정답 영역 블록 단위로 기본 구성되며, 만든 뒤 과목 이름/문항 수/유형 관계를 수정할 수 있습니다.</p>`;
+    }
+    async function registerDetected() {
+      const name = document.getElementById('detect-name').value.trim();
+      const d = await (await fetch('/api/layouts/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: detected.token, name }) })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      detected = null;
+      await loadExams(d.id);
+      alert('새 시험을 만들었습니다. 과목 구성(이름/문항 수), 문제 유형 간 관계를 확인하고 저장한 뒤, [저장하고 이 시험 사용]을 누르세요.');
+    }
     async function afterExamChanged() {
       resultScope = null; selectedIds.clear();
       await loadConfig(); await refreshResults(); loadTestInfo(); loadSystemInfo();
