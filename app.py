@@ -583,7 +583,7 @@ def register_layout():
     name = str(data.get("name") or det["name"]).strip() or "새 시험"
     with lock:
         lid = "u" + token
-        label = f"{name} (자동 인식: {sm['questions']}문항 {sm['choices']}지선다, 수험번호 {sm['id_digits']}자리" + (f", {'/'.join(sm['forms'])}형)" if sm["forms"] else ")")
+        label = f"{name} 양식 - 자동 인식 ({sm['questions']}문항 {sm['choices']}지선다, 수험번호 {sm['id_digits']}자리" + (f", {'/'.join(sm['forms'])}형)" if sm["forms"] else ")")
         meta = layouts.register(lid, label, cfg)
         exam = {"name": name, "title": f"{name} 답안지", "layout": lid, "choices": sm["choices"], "id_digits": sm["id_digits"],
                 "forms": sm["forms"] or ["A"], "form_rule": "none",
