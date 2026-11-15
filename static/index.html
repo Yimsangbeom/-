@@ -12,7 +12,7 @@
       <h1 class="text-xl font-bold">📋 OCR_자동 채점 프로그램</h1>
       <p class="text-xs text-blue-200">2026년 제12회 인터넷중독전문상담사 자격검정 | ocr.ehancom.com</p>
     </div>
-    <span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span>
+    <div class="flex items-center gap-2"><span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span><button onclick="logout()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">로그아웃</button></div>
   </header>
 
   <div class="bg-white border-b px-6 flex gap-2 pt-2">
@@ -135,6 +135,11 @@
   </main>
 
   <script>
+    // 세션 만료(401) 시 로그인 화면으로 이동
+    const _fetch = window.fetch;
+    window.fetch = async (...a) => { const r = await _fetch(...a); if (r.status === 401) location.href = '/login'; return r; };
+    async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
+
     let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, threshold: 0.5 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

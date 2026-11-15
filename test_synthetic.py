@@ -22,9 +22,20 @@ def make_sheet(exam_type, sid, answers, blanks=(), doubles=()):
 
 if __name__ == '__main__':
     random.seed(1)
+    os.environ['OMR_DATA_DIR'] = tempfile.mkdtemp()
+    import auth
+    auth.set_password(os.environ['OMR_DATA_DIR'], 'testpass123')
     from app import app, state
     key = [random.randint(1, 5) for _ in range(100)]
     c = app.test_client()
+    # 인증: 미로그인 차단 / 오답 / 로그인
+    assert c.get('/').status_code == 302 and c.get('/api/results').status_code == 401
+    assert c.get('/results/x.jpg').status_code == 401 and c.get('/app.py').status_code in (302, 401)
+    assert c.get('/login').status_code == 200
+    assert c.post('/api/login', json={'password': 'wrong'}).status_code == 401
+    assert c.post('/api/login', json={'password': 'testpass123'}).status_code == 200
+    assert c.get('/').status_code == 200
+    print('인증 OK')
     d = tempfile.mkdtemp()
     def put(name, img): p = os.path.join(d, name); cv2.imwrite(p, img); return p
 
@@ -52,4 +63,11 @@ if __name__ == '__main__':
     assert c.get(res['만점.png']['vis_url']).status_code == 200
     print('엑셀/보안/미리보기 OK')
     c.delete('/api/results')
+    # 로그아웃 후 차단, 5회 실패 시 잠금
+    assert c.post('/api/logout').status_code == 200 and c.get('/api/results').status_code == 401
+    c2 = app.test_client()
+    codes = [c2.post('/api/login', json={'password': 'bad'}).status_code for _ in range(6)]
+    assert codes[:5] == [401]*5 and codes[5] == 429, codes
+    assert c2.post('/api/login', json={'password': 'testpass123'}).status_code == 429
+    print('로그아웃/잠금 OK')
     print('ALL PASS')

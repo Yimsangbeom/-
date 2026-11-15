@@ -5,6 +5,13 @@
 2. `run.bat` 실행 (venv 생성 → 패키지 설치 → waitress로 80포트 서비스)
 3. 브라우저에서 `http://localhost` 확인 후 `http://ocr.ehancom.com`
 
+## 접속 비밀번호
+- 최초 1회 / 변경: `venv\Scripts\python set_password.py` (해시로 `data/auth.json`에 저장, 재시작 불필요)
+- 비밀번호가 없으면 서버가 시작되지 않음. 5회 연속 실패 시 해당 IP 5분 잠금, 로그인 12시간 유지.
+
+## 자동 시작 (재부팅 후에도)
+`schtasks /create /tn OCR_Score_Server /tr "D:\OCR_Score_app\start_server.bat" /sc onstart /ru SYSTEM /rl highest /f`
+
 ## 테스트
 `python test_synthetic.py` — 합성 답안지로 인식/채점/엑셀/보안 검증
 

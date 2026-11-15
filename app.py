@@ -7,12 +7,12 @@ import uuid
 import cv2
 import pandas as pd
 from flask import Flask, request, jsonify, send_file, send_from_directory
-from flask_cors import CORS
 
+import auth
 from omr_engine import OMREngine, DEFAULT_CONFIG, load_pages_from_file
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.environ.get("OMR_DATA_DIR", os.path.join(BASE_DIR, "data"))
 TEMP_DIR = os.path.join(DATA_DIR, "temp")
 RESULT_DIR = os.path.join(DATA_DIR, "results")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
@@ -23,7 +23,7 @@ for d in (DATA_DIR, TEMP_DIR, RESULT_DIR):
 # 소스코드(app.py 등)가 외부에 노출되지 않도록 static 폴더만 공개한다.
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, "static"), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 요청당 최대 1GB
-CORS(app)
+auth.init_auth(app, DATA_DIR, app.static_folder)
 
 lock = threading.RLock()
 engine = OMREngine(DEFAULT_CONFIG)
@@ -257,6 +257,8 @@ def export_excel():
 if __name__ == "__main__":
     # debug=True 는 외부 공개 서버에서 원격 코드 실행 위험이 있어 사용하지 않는다.
     from waitress import serve
+    if not auth.is_configured(DATA_DIR):
+        raise SystemExit("접속 비밀번호가 설정되지 않았습니다. 먼저 'python set_password.py' 를 실행하세요.")
     # 기본은 내부(127.0.0.1:5000)에서만 대기하고, 외부 접속은 Caddy(HTTPS)가 받아 전달한다.
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
