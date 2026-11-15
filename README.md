@@ -35,8 +35,14 @@
 - 재생성: `python tools/make_samples.py <양식.pdf> static/samples`
 
 ## 테스트
-- `python test_stats.py` (통계 계산: 가상 응시자 시뮬레이션), `python test_features.py` (내장 샘플: 테스트 실행/판정/과락/삭제), `python test_samples.py <양식.pdf>` (스캔 열화 샘플 정확도)
+- `python test_db.py` (저장소: 영속성/이전/복사, `PG_TEST_URL` 지정 시 PostgreSQL 포함), `python test_stats.py` (통계 계산: 가상 응시자 시뮬레이션), `python test_features.py` (내장 샘플: 테스트 실행/판정/과락/삭제), `python test_samples.py <양식.pdf>` (스캔 열화 샘플 정확도)
 `python test_synthetic.py` — 합성 답안지로 인식/채점/엑셀/보안 검증
+
+## 데이터 저장 (SQL 데이터베이스)
+- 기본: **SQLite 파일 `data/omr.db`** (별도 설치/계정 불필요, 서버를 재시작해도 유지). 판독 이미지는 `data/results/` 폴더, 접속 계정은 `data/auth.json`(해시)
+- 이전 버전의 `state.json`/`results.json` 은 처음 시작할 때 자동으로 DB 로 옮기고 `.migrated` 로 이름을 바꿈
+- 나중에 PostgreSQL 등으로 바꾸려면: `venv\Scripts\python set_db.py` (서버 주소/DB/ID/비밀번호를 이 창에서만 입력 -> `data/db.json`, 기존 데이터 복사 선택 가능) 후 서버 재시작. 되돌리기도 같은 메뉴(3번)
+- 홈 화면 [데이터 관리]에서 저장 위치/건수 확인, 백업 엑셀 다운로드, 테스트 결과만 삭제, 채점 결과 전체 삭제("삭제" 입력 확인)
 
 ## 데이터
 `data/` 폴더에 설정(state.json), 채점결과(results.json), 판독 이미지 저장. 서버 재시작해도 유지됨.

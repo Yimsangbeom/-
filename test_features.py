@@ -95,6 +95,9 @@ c.post("/api/grade/students", data={"files": [(open(p, "rb"), "real.png")]})
 assert len(c.get("/api/results").get_json()) == 6
 c.delete("/api/results?scope=test")
 left = c.get("/api/results").get_json(); assert len(left) == 1 and not left[0]["is_test"]
+sysinfo = c.get("/api/system").get_json()
+assert sysinfo["kind"] in ("SQLite", "PostgreSQL") and sysinfo["counts"] == {"real": 1, "test": 0}, sysinfo
+c.delete("/api/results"); assert c.get("/api/system").get_json()["counts"] == {"real": 0, "test": 0} and c.get("/api/results").get_json() == []   # 전체 삭제
 print("테스트만 삭제 OK")
 
 # 이전 버전 설정(schema 2, 합격 총점 300) → 합격 평균 60 으로 자동 이전
@@ -103,6 +106,6 @@ d2 = tempfile.mkdtemp()
 json.dump({"answer_keys": {"A": [1]*100, "B": [2]*100}, "score_per_q": 1.0, "pass_cutoff": 300.0, "subject_fail_cutoff": 40.0, "threshold": 0.5, "schema": 2},
           open(os.path.join(d2, "state.json"), "w"))
 out = subprocess.run([sys.executable, "-c", "import app; s = app.state; print(s['pass_average'], s['score_per_q'], s['threshold'], s['schema'], 'pass_cutoff' in s)"],
-                     env={**os.environ, "OMR_DATA_DIR": d2}, capture_output=True, text=True).stdout.split()[-5:]
+                     env={**os.environ, "OMR_DATA_DIR": d2, "OMR_DATABASE_URL": ""}, capture_output=True, text=True).stdout.split()[-5:]
 assert out == ["60.0", "1.0", "0.65", "3", "False"], out   # 합격 총점 300 -> 평균 60, 배점은 유지
 print("설정 이전 OK"); print("ALL PASS")

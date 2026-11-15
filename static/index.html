@@ -83,6 +83,18 @@
         <div class="text-sm font-semibold mt-4 mb-2">준비된 가상 수험생 (정답 기록)</div>
         <table class="w-full text-xs text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">수험번호</th><th class="p-2 border">유형</th><th class="p-2 border">기대 총점</th><th class="p-2 border text-left">내용</th></tr></thead><tbody id="test-students"></tbody></table>
       </div>
+
+      <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+        <h2 class="text-lg font-bold mb-1">데이터 관리</h2>
+        <p class="text-sm text-slate-600 mb-4">채점 결과와 설정은 서버의 데이터베이스(SQL)에 저장되며, 서버를 다시 시작해도 유지됩니다.</p>
+        <div id="sys-info" class="text-sm bg-slate-50 border rounded p-4 mb-4 space-y-1">불러오는 중...</div>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button onclick="downloadAllExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg">백업용 엑셀 다운로드 (전체)</button>
+          <button onclick="clearTest()" class="bg-slate-400 hover:bg-slate-500 text-white font-bold px-5 py-2.5 rounded-lg">테스트 결과만 삭제</button>
+          <button onclick="deleteAllResults()" class="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-lg">채점 결과 전체 삭제</button>
+        </div>
+        <p class="text-xs text-slate-500">전체 삭제는 실제 응시자와 테스트 결과를 모두 지우며 되돌릴 수 없습니다. 먼저 엑셀로 백업하세요. 정답과 설정은 삭제되지 않습니다.</p>
+      </div>
     </section>
 
     <section id="tab-grade" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -347,6 +359,7 @@
       });
       tbody.innerHTML = html1;
       renderResultTab();
+      if (document.getElementById('sys-info')) loadSystemInfo();
     }
 
     function renderResultTab() {
@@ -386,6 +399,33 @@
     const LV = {'쉬움': 'bg-emerald-100 text-emerald-700', '보통': 'bg-slate-100 text-slate-700', '어려움': 'bg-red-100 text-red-700'};
     const f1 = v => v == null ? '-' : Number(v).toFixed(1);
 
+    // 점수 분포 SVG 차트 (외부 라이브러리 없이 폐쇄망에서도 동작)
+    function distChart(dist, kind) {
+      const W = 560, H = 300, L = 46, R = 16, T = 26, B = 52, pw = W - L - R, ph = H - T - B, n = dist.length, slot = pw / n;
+      const mx = Math.max(...dist.map(x => x.count), 0), step = Math.max(1, Math.ceil(mx / 5)), yMax = Math.max(step * Math.ceil(mx / step), step * 2);
+      const Y = v => T + ph - v / yMax * ph, cx = i => L + slot * i + slot / 2;
+      let g = '';
+      for (let v = 0; v <= yMax; v += step) g += `<line x1="${L}" y1="${Y(v)}" x2="${W - R}" y2="${Y(v)}" stroke="#e2e8f0"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="#64748b">${v}</text>`;
+      let body = '';
+      if (kind === 'bar') {
+        const bw = slot * 0.62;
+        body = dist.map((x, i) => `<rect x="${cx(i) - bw / 2}" y="${Y(x.count)}" width="${bw}" height="${T + ph - Y(x.count)}" rx="3" fill="#2563eb"/>` +
+          (x.count ? `<text x="${cx(i)}" y="${Y(x.count) - 6}" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">${x.count}</text>` : '')).join('');
+      } else {
+        const pts = dist.map((x, i) => `${cx(i)},${Y(x.count)}`).join(' ');
+        body = `<polygon points="${cx(0)},${T + ph} ${pts} ${cx(n - 1)},${T + ph}" fill="#059669" opacity="0.12"/><polyline points="${pts}" fill="none" stroke="#059669" stroke-width="2.5" stroke-linejoin="round"/>` +
+          dist.map((x, i) => `<circle cx="${cx(i)}" cy="${Y(x.count)}" r="4.5" fill="#fff" stroke="#059669" stroke-width="2.5"/>` +
+            (x.count ? `<text x="${cx(i)}" y="${Y(x.count) - 10}" text-anchor="middle" font-size="12" font-weight="700" fill="#047857">${x.count}</text>` : '')).join('');
+      }
+      const px = L + (currentConfig.pass_average / 100) * pw;   // 합격 평균 기준선
+      const pass = `<line x1="${px}" y1="${T}" x2="${px}" y2="${T + ph}" stroke="#dc2626" stroke-dasharray="5 4"/><text x="${px + 4}" y="${T + 11}" font-size="11" fill="#dc2626">합격 평균 ${currentConfig.pass_average}</text>`;
+      const xl = dist.map((x, i) => `<text x="${cx(i)}" y="${T + ph + 18}" text-anchor="middle" font-size="11" fill="#475569">${x.label}</text>`).join('');
+      return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="점수 분포">${g}${body}${pass}${xl}
+        <line x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}" stroke="#94a3b8"/>
+        <text x="${L + pw / 2}" y="${H - 8}" text-anchor="middle" font-size="12" fill="#334155">평균점수 구간</text>
+        <text transform="translate(13 ${T + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="#334155">인원(명)</text></svg>`;
+    }
+
     async function loadStats() {
       const box = document.getElementById('res-stats');
       const d = await (await fetch('/api/stats?scope=' + currentScope())).json();
@@ -402,14 +442,10 @@
         ${card('총점 평균', f1(sm.total_mean), `${tmax}점 만점 · 최고 ${sm.total_max} / 최저 ${sm.total_min}`)}
         ${card('신뢰도 (KR-20)', `<span class="text-base">${kr || '-'}</span>`, d.forms.some(f => f.kr20 != null) ? '1에 가까울수록 일관된 시험' : `유형별 ${d.min_n_item}명 이상부터 계산`)}
       </div>`;
-      // 분포
-      const mx = Math.max(...d.distribution.map(x => x.count), 1);
-      h += `<div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-3">점수 분포 (평균점수 10점 구간)</h3>` +
-        d.distribution.map(x => `<div class="flex items-center gap-3 text-sm mb-1"><div class="w-16 text-right text-slate-600">${x.label}</div>
-          <div class="flex-1 bg-slate-100 rounded h-5"><div class="bg-blue-600 h-5 rounded" style="width:${x.count / mx * 100}%"></div></div>
-          <div class="w-20 text-slate-700">${x.count}명 <span class="text-xs text-slate-400">(${(x.count / sm.n * 100).toFixed(0)}%)</span></div></div>`).join('') + `</div>`;
-      if (d.legacy_n) h = `<div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">채점 당시 정답이 저장되지 않은 이전 버전 결과가 ${d.legacy_n}건 있습니다. 이 결과는 현재 정답 설정으로 대신 계산하므로, 그 사이 정답이나 샘플이 바뀌었다면 정답률이 실제와 다르게 나올 수 있습니다. ${d.scope === 'test' ? '[홈] 화면의 [테스트 실행]을 다시 누르면 새 기준으로 교체됩니다.' : '해당 답안지를 다시 채점해 주세요.'}</div>` + h;
-      if (d.key_conflicts && d.key_conflicts.length) h = `<div class="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">A형과 B형 정답이 서로 맞지 않는 문항이 ${d.key_conflicts.length}개 있습니다 (A형 번호 ${d.key_conflicts.slice(0, 15).join(', ')}${d.key_conflicts.length > 15 ? ' ...' : ''}). 같은 문제는 A형 n번 = B형 (n±10)번입니다. 정답 등록을 확인하세요.</div>` + h;
+      // 분포: 세로 막대 + 꺾은선 (각각 페이지 절반)
+      h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (세로 막대)</h3>${distChart(d.distribution, 'bar')}</div>
+        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (꺾은선)</h3>${distChart(d.distribution, 'line')}</div></div>`;
       // 과목별
       h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-3">과목별 통계</h3><table class="w-full text-sm text-center border-collapse">
         <thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">평균 (${d.score_per_q * 20}점 만점)</th><th class="p-2 border">표준편차</th><th class="p-2 border">최고</th><th class="p-2 border">최저</th><th class="p-2 border">정답률</th><th class="p-2 border">난이도</th><th class="p-2 border">과락 인원</th><th class="p-2 border">과락률</th></tr></thead><tbody>` +
@@ -480,8 +516,9 @@
       alert(`테스트 완료: 가상 답안지 ${d.results.length}장 채점, 정답 기록과 100% 일치 ${ok}장.\n[2. 채점 시작] 탭의 목록에서 [테스트] 항목을 눌러 판독 화면을 확인하세요.`);
     }
     async function clearTest() {
+      if (!confirm('테스트 결과만 삭제합니다. 실제 응시자 결과는 유지됩니다.')) return;
       await fetch('/api/results?scope=test', { method: 'DELETE' });
-      refreshResults();
+      await refreshResults(); loadSystemInfo();
     }
 
     function showPreview(url) {
@@ -491,13 +528,28 @@
       document.getElementById('preview-empty').classList.add('hidden');
     }
 
-    async function clearAllResults() {
-      if (!confirm('모든 채점 결과를 삭제할까요?')) return;
-      await fetch('/api/results', { method: 'DELETE' });
-      refreshResults();
+    async function loadSystemInfo() {
+      const d = await (await fetch('/api/system')).json();
+      document.getElementById('sys-info').innerHTML =
+        `<div><b>저장소</b>: ${esc(d.kind)} <span class="text-slate-500">${esc(d.where)}</span></div>
+         <div><b>채점 결과</b>: 실제 응시자 ${d.counts.real}명 · 테스트 ${d.counts.test}건</div>
+         <div><b>판독 이미지 폴더</b>: <span class="text-slate-500">${esc(d.images_dir)}</span></div>`;
+      return d;
     }
+    function downloadAllExcel() { window.location.href = '/api/export/excel?scope=' + (gradedList.some(x => !x.is_test) ? 'real' : 'test'); }
+    async function deleteAllResults() {
+      const d = await loadSystemInfo();
+      if (d.counts.real + d.counts.test === 0) { alert('삭제할 채점 결과가 없습니다.'); return; }
+      const t = prompt(`실제 응시자 ${d.counts.real}명, 테스트 ${d.counts.test}건의 채점 결과가 모두 삭제됩니다. 되돌릴 수 없습니다.\n계속하려면 아래에 "삭제"라고 입력하세요.`);
+      if (t === null) return;
+      if (t.trim() !== '삭제') { alert('입력이 달라 취소했습니다.'); return; }
+      await fetch('/api/results', { method: 'DELETE' });
+      await refreshResults(); loadSystemInfo();
+      alert('채점 결과를 모두 삭제했습니다.');
+    }
+    const clearAllResults = deleteAllResults;
 
-    loadConfig().then(() => { refreshResults(); loadTestInfo(); });
+    loadConfig().then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); });
   </script>
 </body>
 </html>

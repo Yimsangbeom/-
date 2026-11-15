@@ -9,6 +9,7 @@ import pandas as pd
 from flask import Flask, request, jsonify, send_file, send_from_directory
 
 import auth
+import db
 import stats
 from form_map import derive_key, key_conflicts
 from omr_engine import OMREngine, DEFAULT_CONFIG, load_pages_from_file
@@ -17,8 +18,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("OMR_DATA_DIR", os.path.join(BASE_DIR, "data"))
 TEMP_DIR = os.path.join(DATA_DIR, "temp")
 RESULT_DIR = os.path.join(DATA_DIR, "results")
-STATE_FILE = os.path.join(DATA_DIR, "state.json")
-RESULTS_FILE = os.path.join(DATA_DIR, "results.json")
 for d in (DATA_DIR, TEMP_DIR, RESULT_DIR):
     os.makedirs(d, exist_ok=True)
 
@@ -46,24 +45,24 @@ graded_results = []
 next_id = 0
 
 
+try:
+    store = db.Store(DATA_DIR)
+except Exception as e:      # DB 접속 실패 시 원인을 로그에 남기고 종료
+    raise SystemExit(f"데이터베이스에 연결하지 못했습니다: {e}\n접속 정보(OMR_DATABASE_URL 또는 data/db.json)를 확인하세요.")
+
+
 def save_state():
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False)
-
-
-def save_results():
-    with open(RESULTS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"next_id": next_id, "results": graded_results}, f, ensure_ascii=False)
+    store.save_settings(state)
 
 
 def load_all():
     global graded_results, next_id
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, encoding="utf-8") as f:
-            state.update(json.load(f))
+    saved = store.load_settings()
+    if saved is not None:
+        state.update(saved)
         if state.get("schema") != 3:   # 이전 버전 설정을 현재 방식(문항당 5점, 합격 평균)으로 이전
             if state.get("schema") == 2 and "pass_cutoff" in state:
-                state["pass_average"] = round(float(state["pass_cutoff"]) / 5, 1)   # 합격 총점 → 합격 평균
+                state["pass_average"] = round(float(state["pass_cutoff"]) / 5, 1)   # 합격 총점 -> 합격 평균
             else:
                 state.update({"score_per_q": 5.0, "subject_fail_cutoff": 40.0, "pass_average": 60.0})
             state.pop("pass_cutoff", None)
@@ -73,11 +72,17 @@ def load_all():
                 state["threshold"] = 0.65
             state["schema"] = 3
             save_state()
-    if os.path.exists(RESULTS_FILE):
-        with open(RESULTS_FILE, encoding="utf-8") as f:
-            data = json.load(f)
-            graded_results = data.get("results", [])
-            next_id = data.get("next_id", len(graded_results))
+    graded_results = store.load_results()
+    # 채점 당시 정답이 저장되지 않은 이전 버전의 테스트 결과는 다시 만들 수 있으므로 정리 (통계가 어긋나 보이는 것을 방지)
+    stale = [r for r in graded_results if r.get("is_test") and not r.get("key_used")]
+    if stale:
+        for r in stale:
+            p = os.path.join(RESULT_DIR, os.path.basename(r.get("vis_url", "")))
+            if os.path.isfile(p):
+                os.remove(p)
+        store.delete_results(ids=[r["id"] for r in stale])
+        graded_results = [r for r in graded_results if r not in stale]
+    next_id = max((r["id"] for r in graded_results), default=-1) + 1
     default_keys = {"A": [(i % 5) + 1 for i in range(100)], "B": [((i + 2) % 5) + 1 for i in range(100)]}
     for t in "AB":   # 이전 버전에서 이미 등록해 둔 정답은 '등록됨'으로 간주
         if state["answer_keys"][t] != default_keys[t]:
@@ -268,7 +273,7 @@ def grade_students():
 
     with lock:
         graded_results.extend(new_results)
-        save_results()
+        store.add_results(new_results)
     return jsonify({"status": "success", "results": [with_judge(r) for r in new_results], "errors": errors})
 
 
@@ -291,14 +296,24 @@ def handle_results():
                     if os.path.exists(p):
                         os.remove(p)
             graded_results = [r for r in graded_results if not r.get("is_test")]
-            save_results()
+            store.delete_results(is_test=True)
             return jsonify({"status": "success"})
         graded_results = []
         next_id = 0
         for f in os.listdir(RESULT_DIR):
             os.remove(os.path.join(RESULT_DIR, f))
-        save_results()
+        store.delete_results()
         return jsonify({"status": "success"})
+
+
+@app.route("/api/system")
+def api_system():
+    """저장 위치/건수 (홈 화면 '데이터 관리'에 표시)."""
+    with lock:
+        info = store.describe()
+        info["counts"] = {"real": len(scoped("real")), "test": len(scoped("test"))}
+        info["images_dir"] = RESULT_DIR
+    return jsonify(info)
 
 
 SAMPLE_DIR = os.path.join(app.static_folder, "samples")
@@ -332,7 +347,8 @@ def test_run():
                     verify = {"match": ok, "total": 100, "expected_correct": exp["score"], "desc": exp["desc"]}
                 new.append(make_result(res, "[테스트] " + label, is_test=True, verify=verify, keys=meta["keys"]))
         graded_results = [r for r in graded_results if not r.get("is_test")] + new   # 이전 테스트 결과는 교체
-        save_results()
+        store.delete_results(is_test=True)
+        store.add_results(new)
     return jsonify({"status": "success", "results": [with_judge(r) for r in new]})
 
 
