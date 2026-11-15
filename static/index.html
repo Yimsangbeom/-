@@ -393,14 +393,14 @@
       if (!d.n) { box.innerHTML = '<div class="bg-white p-8 rounded-xl border text-center text-slate-500">통계를 낼 채점 결과가 없습니다.</div>'; return; }
       const sm = d.summary, tmax = d.score_per_q * 100;
       const card = (t, v, sub) => `<div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">${t}</div><div class="text-2xl font-bold text-blue-900 mt-1">${v}</div><div class="text-xs text-slate-500 mt-1">${sub || '&nbsp;'}</div></div>`;
-      const kr = d.forms.map(f => `${f.label} ${f.kr20 == null ? '-' : f.kr20}`).join(' / ');
+      const kr = d.forms.map(f => `${f.label.split(' ')[0]} ${f.kr20 == null ? '-' : f.kr20}`).join(' / ');
       let h = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         ${card('응시자', sm.n + '명', `검수필요 ${sm.review}건`)}
         ${card('합격률', f1(sm.pass_rate) + '%', `합격 ${sm.pass} · 불합격 ${sm.fail} · 과락 ${sm.cut}`)}
         ${card('과락률', f1(sm.cut_rate) + '%', `${sm.cut}명`)}
         ${card('평균점수 평균', f1(sm.avg_mean), `중앙값 ${f1(sm.avg_median)} · 표준편차 ${f1(sm.avg_sd)}`)}
         ${card('총점 평균', f1(sm.total_mean), `${tmax}점 만점 · 최고 ${sm.total_max} / 최저 ${sm.total_min}`)}
-        ${card('신뢰도 (KR-20)', kr || '-', d.forms.some(f => f.kr20 != null) ? '1에 가까울수록 일관된 시험' : `유형별 ${d.min_n_item}명 이상부터 계산`)}
+        ${card('신뢰도 (KR-20)', `<span class="text-base">${kr || '-'}</span>`, d.forms.some(f => f.kr20 != null) ? '1에 가까울수록 일관된 시험' : `유형별 ${d.min_n_item}명 이상부터 계산`)}
       </div>`;
       // 분포
       const mx = Math.max(...d.distribution.map(x => x.count), 1);
