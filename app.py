@@ -35,7 +35,7 @@ state = {
     },
     "score_per_q": 1.0,
     "pass_cutoff": 60.0,      # 합격 총점(이상이면 합격)
-    "subject_cutoff": 8.0,    # 과목별 과락 점수(미만이면 과락, 0=사용 안 함). 20점 만점의 40%
+    "fail_cutoff": 40.0,      # 과락 점수: 전체 총점이 이 점수 미만이면 과락(0=사용 안 함)
     "threshold": 0.65,
 }
 graded_results = []
@@ -76,20 +76,13 @@ def save_upload(file_storage):
     return path
 
 
-SUBJECT_CODES = ("A", "B", "C", "D", "E")
-
-
 def judge(item):
-    """현재 설정(합격 총점/과락 점수)으로 판정. 설정을 바꾸면 이미 채점된 결과도 즉시 다시 판정된다."""
-    cut = state["subject_cutoff"]
-    fails = [c for c in SUBJECT_CODES if cut > 0 and item["subject_scores"].get(c, 0) < cut]
-    if fails:
-        status = "과락"
-    elif item["total_score"] < state["pass_cutoff"]:
-        status = "불합격"
-    else:
-        status = "합격"
-    return status, fails
+    """현재 설정으로 판정: 총점 < 과락 점수 → 과락, 총점 < 합격 총점 → 불합격, 그 외 합격.
+    설정을 바꾸면 이미 채점된 결과도 즉시 다시 판정된다."""
+    total = item["total_score"]
+    if state["fail_cutoff"] > 0 and total < state["fail_cutoff"]:
+        return "과락"
+    return "불합격" if total < state["pass_cutoff"] else "합격"
 
 
 def make_result(res, page_label, is_test=False, verify=None):
@@ -148,8 +141,8 @@ def handle_config():
             state["score_per_q"] = float(data["score_per_q"])
         if "pass_cutoff" in data:
             state["pass_cutoff"] = float(data["pass_cutoff"])
-        if "subject_cutoff" in data:
-            state["subject_cutoff"] = max(0.0, float(data["subject_cutoff"]))
+        if "fail_cutoff" in data:
+            state["fail_cutoff"] = max(0.0, float(data["fail_cutoff"]))
         if "threshold" in data:
             state["threshold"] = float(data["threshold"])
             engine.fill_threshold = state["threshold"]
@@ -224,8 +217,7 @@ def grade_students():
 
 
 def with_judge(item):
-    status, fails = judge(item)
-    return {**item, "result": status, "fail_subjects": fails}
+    return {**item, "result": judge(item)}
 
 
 @app.route("/api/results", methods=["GET", "DELETE"])
@@ -294,7 +286,6 @@ def export_excel():
         rows, detail = [], []
         for item in graded_results:
             ss = item["subject_scores"]
-            status, fails = judge(item)
             rows.append({
                 "구분": "테스트" if item.get("is_test") else "",
                 "순번": item["id"] + 1,
@@ -307,8 +298,7 @@ def export_excel():
                 "D.상담의 이론과 실제(20)": ss["D"],
                 "E.정책과 법(20)": ss["E"],
                 "총점(100)": item["total_score"],
-                "판정": status,
-                "과락과목": ",".join(fails),
+                "판정": judge(item),
                 "무표기": item["blank_count"],
                 "이중마킹": item["multi_count"],
                 "검수필요여부": "검수필요" if item["needs_review"] else "정상",

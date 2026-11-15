@@ -22,25 +22,27 @@ print("테스트 실행 OK:", {r["student_id"]: (r["total_score"], r["result"]) 
 # 재실행하면 테스트 결과는 교체(중복 없음)
 c.post("/api/test/run"); assert len(c.get("/api/results").get_json()) == 4
 
-# 판정: 기본(합격 60 / 과락 8) → 전원 합격
+# 판정(총점 기준): 기본(합격 60 / 과락 40) → 점수 100/90/82/94 전원 합격
 res = {r["student_id"]: r for r in c.get("/api/results").get_json()}
 assert all(r["result"] == "합격" for r in res.values()), [r["result"] for r in res.values()]
-# 합격 총점 올리면 불합격
+# 합격 총점 92 → 90, 82 는 불합격(과락 아님)
 c.post("/api/config", json={"pass_cutoff": 92}); res = {r["student_id"]: r for r in c.get("/api/results").get_json()}
-assert res["202600001"]["result"] == "합격" and res["202600002"]["result"] == "불합격" and res["202600004"]["result"] == "합격"
-# 과락 점수 올리면 과락(과목 점수 < 기준) + 과락이 불합격보다 우선, 과락 과목 표시
-c.post("/api/config", json={"pass_cutoff": 60, "subject_cutoff": 19}); res = {r["student_id"]: r for r in c.get("/api/results").get_json()}
-r3 = res["202600003"]; assert r3["result"] == "과락" and set(r3["fail_subjects"]) == {c_ for c_, v in r3["subject_scores"].items() if v < 19}, r3
-assert res["202600001"]["result"] == "합격" and res["202600001"]["fail_subjects"] == []
+assert [res[k]["result"] for k in ("202600001", "202600002", "202600003", "202600004")] == ["합격", "불합격", "불합격", "합격"]
+# 과락 점수 85 → 82 는 과락, 90 은 불합격(합격 총점 92 미만, 과락 85 이상) — 과락이 불합격보다 우선
+c.post("/api/config", json={"fail_cutoff": 85}); res = {r["student_id"]: r for r in c.get("/api/results").get_json()}
+assert [res[k]["result"] for k in ("202600001", "202600002", "202600003", "202600004")] == ["합격", "불합격", "과락", "합격"]
+# 경계: 총점이 과락 점수와 같으면 과락 아님(미만일 때만 과락), 합격 총점과 같으면 합격(이상)
+c.post("/api/config", json={"fail_cutoff": 82, "pass_cutoff": 90}); res = {r["student_id"]: r for r in c.get("/api/results").get_json()}
+assert res["202600003"]["result"] == "불합격" and res["202600002"]["result"] == "합격"
 # 0 = 과락 사용 안 함
-c.post("/api/config", json={"subject_cutoff": 0}); assert all(r["result"] == "합격" for r in c.get("/api/results").get_json())
-c.post("/api/config", json={"subject_cutoff": 8})
+c.post("/api/config", json={"pass_cutoff": 100, "fail_cutoff": 0}); assert {r["result"] for r in c.get("/api/results").get_json()} == {"합격", "불합격"}
+c.post("/api/config", json={"pass_cutoff": 60, "fail_cutoff": 40})
 print("판정/과락 OK")
 
 # 엑셀에 판정·과락 컬럼 / 테스트 구분
 import io, pandas as pd
 x = pd.read_excel(io.BytesIO(c.get("/api/export/excel").data), sheet_name="성적총괄표")
-assert {"구분", "판정", "과락과목"} <= set(x.columns) and (x["구분"] == "테스트").all()
+assert {"구분", "판정"} <= set(x.columns) and (x["구분"] == "테스트").all()
 
 # 테스트 결과만 삭제 → 실제 결과(직접 채점한 것)는 유지
 import cv2

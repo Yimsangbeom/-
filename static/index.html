@@ -45,8 +45,8 @@
             <input id="cfg-cutoff" type="number" value="60" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(과목별 이 점수 미만이면 과락·불합격, 0=사용 안 함)</span></label>
-            <input id="cfg-subcut" type="number" value="8" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
+            <label class="font-semibold text-sm">과락 점수 <span class="text-xs font-normal text-slate-500">(총점이 이 점수 미만이면 과락, 0=사용 안 함)</span></label>
+            <input id="cfg-failcut" type="number" value="40" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
             <label class="font-semibold text-sm">마킹 인식 민감도 (0.50~0.85, 기본 0.65)</label>
@@ -186,7 +186,7 @@
     }
     async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
 
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, subject_cutoff: 8, threshold: 0.65 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 1, pass_cutoff: 60, fail_cutoff: 40, threshold: 0.65 };
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -204,7 +204,7 @@
       currentConfig = await res.json();
       document.getElementById('cfg-score').value = currentConfig.score_per_q;
       document.getElementById('cfg-cutoff').value = currentConfig.pass_cutoff;
-      document.getElementById('cfg-subcut').value = currentConfig.subject_cutoff;
+      document.getElementById('cfg-failcut').value = currentConfig.fail_cutoff;
       document.getElementById('cfg-th').value = currentConfig.threshold;
       renderKeySummary();
     }
@@ -221,7 +221,7 @@
     async function saveConfig() {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_cutoff = parseFloat(document.getElementById('cfg-cutoff').value);
-      currentConfig.subject_cutoff = parseFloat(document.getElementById('cfg-subcut').value) || 0;
+      currentConfig.fail_cutoff = parseFloat(document.getElementById('cfg-failcut').value) || 0;
       currentConfig.threshold = parseFloat(document.getElementById('cfg-th').value);
       await fetch('/api/config', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(currentConfig) });
       alert('설정이 저장되었습니다. 이미 채점된 결과도 새 기준으로 다시 판정됩니다.');
@@ -301,8 +301,7 @@
       return t + esc(item.filename) + v;
     }
     function subCell(item, code) {
-      const bad = (item.fail_subjects || []).includes(code);
-      return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}${bad ? ' ⚠' : ''}</td>`;
+      return `<td class="p-2">${item.subject_scores[code]}</td>`;
     }
     async function refreshResults() {
       const res = await fetch('/api/results');
@@ -325,7 +324,7 @@
       const n = r => gradedList.filter(x => x.result === r).length, nt = gradedList.filter(x => x.is_test).length;
       document.getElementById('result-summary').innerHTML = `총 응시자: ${gradedList.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
         + (nt ? ` <span class="text-xs font-normal text-violet-600">(🧪 테스트 ${nt}건 포함)</span>` : '')
-        + `<div class="text-xs font-normal text-slate-500">합격 총점 ${currentConfig.pass_cutoff}점 이상, 과목별 ${currentConfig.subject_cutoff}점 미만은 과락</div>`;
+        + `<div class="text-xs font-normal text-slate-500">합격 ${currentConfig.pass_cutoff}점 이상 · 불합격 ${currentConfig.fail_cutoff}~${currentConfig.pass_cutoff}점 미만 · 과락 ${currentConfig.fail_cutoff}점 미만 (총점 기준)</div>`;
     }
 
     async function loadTestInfo() {
