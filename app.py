@@ -362,7 +362,8 @@ def item_key(item):
 
 
 def stats_items(scope):
-    return [{**with_judge(r), "_key": item_key(r)} for r in scoped(scope)]
+    # _legacy: 채점 당시 정답이 저장되지 않은 이전 버전 결과 (현재 정답 설정으로 대신 계산하므로 부정확할 수 있음)
+    return [{**with_judge(r), "_key": item_key(r), "_legacy": not r.get("key_used")} for r in scoped(scope)]
 
 
 @app.route("/api/stats")
@@ -450,7 +451,7 @@ def export_excel():
         form_df.to_excel(writer, sheet_name="유형별통계", index=False)
         for fm in st["forms"]:
             items_df = pd.DataFrame([{
-                "문항": it["q"], "과목": it["subject"], "정답": it["answer"], "정답률(%)": it["correct_rate"],
+                "문항": it["q"], "과목": it["subject_name"], "정답": it["answer"], "정답률(%)": it["correct_rate"],
                 "오답률(%)": it["wrong_rate"], "1번(%)": it["choices"]["1"], "2번(%)": it["choices"]["2"],
                 "3번(%)": it["choices"]["3"], "4번(%)": it["choices"]["4"], "5번(%)": it["choices"]["5"],
                 "무표기(%)": it["choices"]["무표기"], "이중(%)": it["choices"]["이중"],

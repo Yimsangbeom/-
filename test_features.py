@@ -57,6 +57,16 @@ assert c.get("/api/stats?scope=real").get_json() == {"n": 0, "scope": "real", "c
 xl = pd.ExcelFile(io.BytesIO(c.get("/api/export/excel?scope=test").data))
 assert {"성적총괄표", "문항별답안", "통계요약", "점수분포", "과목별통계", "유형별통계"} <= set(xl.sheet_names) and any(n.startswith("문항분석_") for n in xl.sheet_names), xl.sheet_names
 assert "석차" in pd.read_excel(xl, "성적총괄표").columns
+assert st["legacy_n"] == 0 and st["blocks"][0]["subject_name"] == "인터넷중독의 이해" and st["blocks"][0]["n_a"] == 4 and st["blocks"][0]["n_b"] == 1
+assert st["forms"][0]["items"][20]["subject_name"] == "인터넷중독의 진단과 평가"
+x_items = pd.read_excel(xl, [n for n in xl.sheet_names if n.startswith("문항분석_")][0])
+assert x_items.loc[0, "과목"] == "인터넷중독의 이해" and x_items.loc[99, "과목"] == "인터넷중독의 정책과 법"
+# 이전 버전 결과(정답 미저장) 표시
+import app as _app
+for r in _app.graded_results[:2]:
+    r.pop("key_used", None)
+assert c.get("/api/stats?scope=test").get_json()["legacy_n"] == 2
+c.post("/api/test/run"); assert c.get("/api/stats?scope=test").get_json()["legacy_n"] == 0     # 테스트 재실행하면 새 기준으로 교체
 print("통계 API/엑셀 OK")
 
 # 정답 등록: 한쪽만 주면 다른 쪽은 블록 교체 규칙으로 자동 생성, 둘 다 주면 불일치 검증

@@ -8,8 +8,9 @@ import math
 
 from form_map import other_q, key_conflicts
 
-SUBJECTS = [("A", "인터넷중독의 이해"), ("B", "진단과 평가"), ("C", "상담기법"),
-            ("D", "상담의 이론과 실제"), ("E", "정책과 법")]
+SUBJECTS = [("A", "인터넷중독의 이해"), ("B", "인터넷중독의 진단과 평가"), ("C", "인터넷중독 상담기법"),
+            ("D", "인터넷중독 상담의 이론과 실제"), ("E", "인터넷중독의 정책과 법")]
+SUBJECT_NAME = dict(SUBJECTS)
 MIN_N_ITEM = 10      # 문항 분석(변별도/정답키 의심 등)을 판단하는 최소 응시자 수(유형별)
 
 
@@ -136,12 +137,16 @@ def compute(items, spq):
                             tot += 1
                             hit += it["student_answers"].get(str(qq)) == str(it["_key"][qq - 1])
                     rate[t] = (hit / tot * 100) if tot else None
-                blocks.append({"subject": code, "block": name, "a_rate": _r(rate["A"]), "b_rate": _r(rate["B"]),
+                blocks.append({"subject": code, "subject_name": SUBJECT_NAME[code], "block": name,
+                               "n_a": sum(1 for it in items if it["exam_type"] == "A"),
+                               "n_b": sum(1 for it in items if it["exam_type"] == "B"),
+                               "a_rate": _r(rate["A"]), "b_rate": _r(rate["B"]),
                                "diff": _r(rate["B"] - rate["A"]) if None not in rate.values() else None})
 
     return {"n": n, "summary": summary, "distribution": distribution, "subjects": subjects,
             "forms_summary": forms_summary, "forms": forms, "min_n_item": MIN_N_ITEM,
-            "key_conflicts": conflicts, "blocks": blocks}
+            "key_conflicts": conflicts, "blocks": blocks,
+            "legacy_n": sum(1 for it in items if it.get("_legacy"))}
 
 
 def _item_analysis(label, form, key, g):
@@ -182,7 +187,8 @@ def _item_analysis(label, form, key, g):
         if (cnt["무표기"] + cnt["이중"]) / n >= 0.1 and enough:
             flags.append("marking")
         rows.append({
-            "q": q, "alt_q": other_q(q), "subject": SUBJECTS[(q - 1) // 20][0], "answer": int(right),
+            "q": q, "alt_q": other_q(q), "subject": SUBJECTS[(q - 1) // 20][0],
+            "subject_name": SUBJECTS[(q - 1) // 20][1], "answer": int(right),
             "correct_rate": _r(p * 100), "wrong_rate": _r((1 - p) * 100),
             "choices": {c: _r(cnt[c] / n * 100) for c in cnt},
             "top_wrong": int(wrong_best), "top_wrong_rate": _r(cnt[wrong_best] / n * 100),
