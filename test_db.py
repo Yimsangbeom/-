@@ -50,6 +50,17 @@ except ValueError:
     pass
 print("DB 복사 OK")
 
+# 이전 버전 DB(exam_id 열 없음) 자동 이전: 열이 추가되고 기존 결과는 'default' 시험으로 간주
+import sqlite3
+d4 = tempfile.mkdtemp(); con = sqlite3.connect(os.path.join(d4, "omr.db"))
+con.executescript("CREATE TABLE settings (key VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL);"
+                  "CREATE TABLE results (id INTEGER PRIMARY KEY, is_test BOOLEAN NOT NULL, exam_type VARCHAR(4), student_id VARCHAR(64), data TEXT NOT NULL);")
+con.execute("INSERT INTO results VALUES (0, 0, 'A', '202600001', ?)", (json.dumps(item(0)),)); con.commit(); con.close()
+old = db.Store(d4); assert old.count(exam_id="default") == {"real": 1, "test": 0} and old.load_results("default")[0]["id"] == 0
+old.add_results([{**item(1), "exam_id": "x1"}]); assert old.count(exam_id="x1")["real"] == 1 and old.count()["real"] == 2 and old.max_id() == 1
+old.delete_results(exam_id="x1"); assert old.count()["real"] == 1
+print("이전 DB 구조 이전 OK")
+
 pg = os.environ.get("PG_TEST_URL")
 if pg:
     p = db.Store(tempfile.mkdtemp(), url=pg); p.delete_results(); check(p)

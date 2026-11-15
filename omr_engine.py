@@ -18,6 +18,7 @@ DEFAULT_CONFIG = {
         'name_box': [98, 441, 564, 142]
     },
     'bubble_radius': 13,
+    'choices_per_block': 5,
     'type_bubbles': {'A': [520.0, 650.0], 'B': [520.0, 712.0]},
     'id_grid': {
         'x_cols': [162.0, 217.0, 271.5, 326.0, 381.0, 435.5, 490.0, 545.0, 599.5],
@@ -141,23 +142,33 @@ class OMREngine:
         base = min(ratios)
         return [i for i, v in enumerate(ratios) if v >= th and v >= base + 0.25]
 
-    def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0):
+    def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0, exam=None):
+        """exam: 시험 설정(exam.py). 없으면 기본 시험(5과목x20문항, 선택지 5, 수험번호 9자리, A/B형)."""
+        import exam as exam_mod
+        exam = exam or exam_mod.default_exam()
         aligned = self.align_image(img_bgr)
         vis_img = aligned.copy()
         gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY_INV)
         r, th = self.cfg['bubble_radius'], self.fill_threshold
 
-        type_keys = list(self.cfg['type_bubbles'].keys())
-        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in type_keys]
-        marked_types = [type_keys[i] for i in self.pick_marked(type_ratios, th)]
-        exam_type, type_status = (marked_types[0], '정상') if len(marked_types) == 1 else ('A', '유형오류')
-        for t_code, (tx, ty) in self.cfg['type_bubbles'].items():
+        # 문제 유형 표시칸: 시험에서 쓰는 유형만 인식 (그 외 칸은 무시)
+        forms = [f for f in exam['forms'] if f in self.cfg['type_bubbles']]
+        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in forms]
+        marked_types = [forms[i] for i in self.pick_marked(type_ratios, th)] if len(forms) > 1 else []
+        if len(forms) == 1:                      # 유형이 하나면 표시 여부와 관계없이 그 유형
+            exam_type, type_status = forms[0], '정상'
+        elif len(marked_types) == 1:
+            exam_type, type_status = marked_types[0], '정상'
+        else:
+            exam_type, type_status = forms[0], '유형오류'
+        for t_code in forms:
+            tx, ty = self.cfg['type_bubbles'][t_code]
             color = (0, 180, 0) if t_code == exam_type and type_status == '정상' else (0, 165, 255)
             if t_code in marked_types or type_status != '정상':
                 cv2.circle(vis_img, (int(tx), int(ty)), r + 3, color, 3)
 
-        id_x_cols, id_y_rows = self.cfg['id_grid']['x_cols'], self.cfg['id_grid']['y_rows']
+        id_x_cols, id_y_rows = self.cfg['id_grid']['x_cols'][:exam['id_digits']], self.cfg['id_grid']['y_rows']
         student_id_chars, id_warnings = [], 0
         for cx in id_x_cols:
             col_ratios = [self.get_bubble_ratio(binary, cx, cy, r) for cy in id_y_rows]
@@ -170,34 +181,38 @@ class OMREngine:
                 id_warnings += 1
         student_id = ''.join(student_id_chars)
 
-        ans_key = answer_key_dict.get(exam_type, answer_key_dict.get('A', [1]*100))
+        n_q, n_ch = exam_mod.total_questions(exam), exam['choices']
+        ans_key = answer_key_dict.get(exam_type, answer_key_dict.get(forms[0], [1] * n_q))
         x_cols, y_rows = self.cfg['answer_grid']['x_cols'], self.cfg['answer_grid']['y_rows']
-        student_answers, subject_scores = {}, {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0, 'E': 0.0}
+        per_block, rows = self.cfg.get('choices_per_block', 5), len(y_rows)
+        codes = exam_mod.codes(exam)
+        student_answers, subject_scores = {}, {c: 0.0 for c in codes}
         multi_count, blank_count, correct_count = 0, 0, 0
 
-        for s_idx, subj in enumerate(self.cfg['subjects']):
-            col_base = s_idx * 5
-            for r_idx in range(20):
-                q_num, cy = s_idx * 20 + r_idx + 1, y_rows[r_idx]
-                correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
-                row_ratios = [self.get_bubble_ratio(binary, x_cols[col_base + c_i], cy, r) for c_i in range(5)]
-                marked = [(c_i + 1, x_cols[col_base + c_i], cy) for c_i in self.pick_marked(row_ratios, th)]
-                if len(marked) == 1:
-                    chosen, m_cx, m_cy = marked[0]
-                    student_answers[q_num] = str(chosen)
-                    if chosen == correct_choice:
-                        subject_scores[subj['code']] += score_per_q
-                        correct_count += 1
-                        cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (0, 190, 0), 3)
-                    else:
-                        cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (0, 0, 255), 3)
-                        cv2.circle(vis_img, (int(x_cols[col_base + correct_choice - 1]), int(cy)), r, (255, 100, 0), 2)
-                elif len(marked) == 0:
-                    student_answers[q_num] = '무표기'
-                    blank_count += 1
+        for q_num in range(1, n_q + 1):
+            block, row = divmod(q_num - 1, rows)
+            col_base, cy = block * per_block, y_rows[row]
+            code = codes[exam_mod.subject_index(exam, q_num)]
+            correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
+            row_ratios = [self.get_bubble_ratio(binary, x_cols[col_base + c_i], cy, r) for c_i in range(n_ch)]
+            marked = [(c_i + 1, x_cols[col_base + c_i], cy) for c_i in self.pick_marked(row_ratios, th)]
+            if len(marked) == 1:
+                chosen, m_cx, m_cy = marked[0]
+                student_answers[q_num] = str(chosen)
+                if chosen == correct_choice:
+                    subject_scores[code] += score_per_q
+                    correct_count += 1
+                    cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (0, 190, 0), 3)
                 else:
-                    student_answers[q_num] = '이중'
-                    multi_count += 1
+                    cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (0, 0, 255), 3)
+                    if 1 <= correct_choice <= n_ch:
+                        cv2.circle(vis_img, (int(x_cols[col_base + correct_choice - 1]), int(cy)), r, (255, 100, 0), 2)
+            elif len(marked) == 0:
+                student_answers[q_num] = '무표기'
+                blank_count += 1
+            else:
+                student_answers[q_num] = '이중'
+                multi_count += 1
 
         total_score = sum(subject_scores.values())
         needs_review = (type_status != '정상') or (id_warnings > 0) or (multi_count > 0) or (blank_count > 0)

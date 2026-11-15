@@ -52,7 +52,7 @@ print("판정/과락/배점 OK")
 st = c.get("/api/stats?scope=test").get_json()
 assert st["n"] == 5 and st["counts"] == {"real": 0, "test": 5} and st["summary"]["cut"] == 1
 assert [f["label"][:2] for f in st["forms"]] == ["통합", "A형", "B형"] and all(not f["enough"] for f in st["forms"])  # 소수 인원: 판정 보류
-assert st["key_conflicts"] == [] and len(st["blocks"]) == 10
+assert st["key_conflicts"] == [] and len(st["blocks"]) == 10 and st["avg_full"] == 100 and st["distribution"][0]["label"] == "0~10"
 assert c.get("/api/stats?scope=real").get_json() == {"n": 0, "scope": "real", "counts": {"real": 0, "test": 5}, "score_per_q": 5.0}
 xl = pd.ExcelFile(io.BytesIO(c.get("/api/export/excel?scope=test").data))
 assert {"성적총괄표", "문항별답안", "통계요약", "점수분포", "과목별통계", "유형별통계"} <= set(xl.sheet_names) and any(n.startswith("문항분석_") for n in xl.sheet_names), xl.sheet_names
@@ -116,5 +116,5 @@ json.dump({"answer_keys": {"A": [1]*100, "B": [2]*100}, "score_per_q": 1.0, "pas
           open(os.path.join(d2, "state.json"), "w"))
 out = subprocess.run([sys.executable, "-c", "import app; s = app.state; print(s['pass_average'], s['score_per_q'], s['threshold'], s['schema'], 'pass_cutoff' in s)"],
                      env={**os.environ, "OMR_DATA_DIR": d2, "OMR_DATABASE_URL": ""}, capture_output=True, text=True).stdout.split()[-5:]
-assert out == ["60.0", "1.0", "0.65", "3", "False"], out   # 합격 총점 300 -> 평균 60, 배점은 유지
+assert out == ["60.0", "1.0", "0.65", "4", "False"], out   # 합격 총점 300 -> 평균 60, 배점은 유지
 print("설정 이전 OK"); print("ALL PASS")

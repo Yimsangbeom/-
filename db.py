@@ -12,7 +12,7 @@ import json
 import os
 
 from sqlalchemy import (Boolean, Column, Integer, MetaData, String, Table, Text, create_engine, delete, func,
-                        insert, select, text)
+                        inspect, insert, select, text)
 
 metadata = MetaData()
 settings_t = Table("settings", metadata,
@@ -20,6 +20,7 @@ settings_t = Table("settings", metadata,
                    Column("value", Text, nullable=False))
 results_t = Table("results", metadata,
                   Column("id", Integer, primary_key=True, autoincrement=False),
+                  Column("exam_id", String(32), nullable=False, server_default="default"),   # 시험(시험 설정) 구분
                   Column("is_test", Boolean, nullable=False, default=False),
                   Column("exam_type", String(4)),
                   Column("student_id", String(64)),
@@ -48,6 +49,7 @@ class Store:
             kw["connect_args"] = {"client_encoding": "utf8"}
         self.engine = create_engine(self.url, **kw)
         metadata.create_all(self.engine)
+        self._ensure_exam_column()
         self._migrate_legacy_files()
 
     # ---------- 표시용 ----------
@@ -63,51 +65,88 @@ class Store:
         return {"kind": {"postgresql": "PostgreSQL", "mssql": "SQL Server", "mysql": "MySQL"}.get(u.get_backend_name(), u.get_backend_name()),
                 "where": f"{u.host}:{u.port or ''}/{u.database}  (사용자 {u.username})"}
 
-    # ---------- 설정 ----------
-    def load_settings(self):
+    # ---------- 설정 (키/값) ----------
+    def get_setting(self, key):
         with self.engine.connect() as c:
-            row = c.execute(select(settings_t.c.value).where(settings_t.c.key == "state")).first()
+            row = c.execute(select(settings_t.c.value).where(settings_t.c.key == key)).first()
         return json.loads(row[0]) if row else None
 
-    def save_settings(self, state):
+    def set_setting(self, key, value):
         with self.engine.begin() as c:
-            c.execute(delete(settings_t).where(settings_t.c.key == "state"))
-            c.execute(insert(settings_t).values(key="state", value=json.dumps(state)))   # ensure_ascii=True: DB 인코딩과 무관하게 저장
+            c.execute(delete(settings_t).where(settings_t.c.key == key))
+            c.execute(insert(settings_t).values(key=key, value=json.dumps(value)))   # ensure_ascii=True: DB 인코딩과 무관
+
+    def delete_setting(self, key):
+        with self.engine.begin() as c:
+            c.execute(delete(settings_t).where(settings_t.c.key == key))
+
+    def all_settings(self):
+        with self.engine.connect() as c:
+            return {k: json.loads(v) for k, v in c.execute(select(settings_t.c.key, settings_t.c.value)).all()}
+
+    def load_settings(self):          # (이전 버전 호환) 단일 설정 'state'
+        return self.get_setting("state")
+
+    def save_settings(self, state):
+        self.set_setting("state", state)
 
     # ---------- 결과 ----------
-    def load_results(self):
+    def load_results(self, exam_id=None):
+        stmt = select(results_t.c.data).order_by(results_t.c.id)
+        if exam_id is not None:
+            stmt = stmt.where(results_t.c.exam_id == exam_id)
         with self.engine.connect() as c:
-            rows = c.execute(select(results_t.c.data).order_by(results_t.c.id)).all()
+            rows = c.execute(stmt).all()
         return [json.loads(r[0]) for r in rows]
 
-    def add_results(self, items):
+    def add_results(self, items, exam_id=None):
+        """items 각각의 exam_id(없으면 인자, 그것도 없으면 'default')로 저장."""
         if not items:
             return
         with self.engine.begin() as c:
             c.execute(insert(results_t), [{
-                "id": it["id"], "is_test": bool(it.get("is_test")), "exam_type": it.get("exam_type"),
+                "id": it["id"], "exam_id": it.get("exam_id") or exam_id or "default",
+                "is_test": bool(it.get("is_test")), "exam_type": it.get("exam_type"),
                 "student_id": it.get("student_id"),
                 "data": json.dumps(it)} for it in items])      # 한글은 \\uXXXX 로 저장되어 DB 인코딩(SQL_ASCII 등)에 영향받지 않음
 
-    def delete_results(self, is_test=None, ids=None):
-        """is_test=None 이면 전부, True/False 이면 해당 구분만, ids 가 있으면 그 번호만 삭제."""
+    def delete_results(self, is_test=None, ids=None, exam_id=None):
+        """조건을 모두 만족하는 결과를 삭제. 조건이 없으면 전부.
+        exam_id: 해당 시험만 / is_test: True·False 구분만 / ids: 그 번호만."""
         stmt = delete(results_t)
+        if exam_id is not None:
+            stmt = stmt.where(results_t.c.exam_id == exam_id)
         if ids is not None:
             stmt = stmt.where(results_t.c.id.in_(list(ids)))
-        elif is_test is not None:
+        if is_test is not None:
             stmt = stmt.where(results_t.c.is_test == bool(is_test))
         with self.engine.begin() as c:
             c.execute(stmt)
 
-    def count(self):
+    def max_id(self):
         with self.engine.connect() as c:
-            real = c.execute(select(func.count()).select_from(results_t).where(results_t.c.is_test == False)).scalar()  # noqa: E712
-            test = c.execute(select(func.count()).select_from(results_t).where(results_t.c.is_test == True)).scalar()    # noqa: E712
-        return {"real": real, "test": test}
+            v = c.execute(select(func.max(results_t.c.id))).scalar()
+        return -1 if v is None else int(v)
+
+    def count(self, exam_id=None):
+        def q(flag):
+            stmt = select(func.count()).select_from(results_t).where(results_t.c.is_test == flag)  # noqa: E712
+            if exam_id is not None:
+                stmt = stmt.where(results_t.c.exam_id == exam_id)
+            return stmt
+        with self.engine.connect() as c:
+            return {"real": c.execute(q(False)).scalar(), "test": c.execute(q(True)).scalar()}
 
     def ping(self):
         with self.engine.connect() as c:
             c.execute(text("select 1"))
+
+    # ---------- 이전 버전 DB 에 exam_id 열이 없으면 추가 (기존 결과는 'default' 시험) ----------
+    def _ensure_exam_column(self):
+        cols = {c["name"] for c in inspect(self.engine).get_columns("results")}
+        if "exam_id" not in cols:
+            with self.engine.begin() as c:
+                c.execute(text("ALTER TABLE results ADD COLUMN exam_id VARCHAR(32) NOT NULL DEFAULT 'default'"))
 
     # ---------- 이전 버전(JSON 파일) 데이터 이전 ----------
     def _migrate_legacy_files(self):
@@ -129,9 +168,8 @@ def copy_all(src, dst):
     c = dst.count()
     if c["real"] + c["test"] > 0:
         raise ValueError("대상 DB 에 이미 채점 결과가 있어 복사하지 않았습니다.")
-    st = src.load_settings()
-    if st is not None:
-        dst.save_settings(st)
+    for k, v in src.all_settings().items():
+        dst.set_setting(k, v)
     items = src.load_results()
     dst.add_results(items)
     return len(items)

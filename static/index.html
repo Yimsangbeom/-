@@ -15,7 +15,7 @@
   <header class="bg-blue-900 text-white px-6 py-4 flex justify-between items-center shadow">
     <div>
       <h1 class="text-xl font-bold">OCR_자동 채점 프로그램</h1>
-      <p class="text-xs text-blue-200">2026년 제12회 인터넷중독전문상담사 자격검정 | ocr.ehancom.com</p>
+      <p id="hdr-sub" class="text-xs text-blue-200">ocr.ehancom.com</p>
     </div>
     <div class="flex items-center gap-2"><span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span><button onclick="openPwDialog()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">아이디/비밀번호 변경</button> <button onclick="logout()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">로그아웃</button></div>
   </header>
@@ -29,19 +29,19 @@
   <main class="p-6 max-w-7xl mx-auto w-full flex-1">
     <section id="tab-home" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div class="bg-white p-6 rounded-xl shadow-sm border">
-        <h2 class="text-lg font-bold mb-4">원본 답안지 형식 및 기준 설정</h2>
-        <ul class="text-sm space-y-2 text-slate-600 mb-6">
-          <li>• <b>적용 양식:</b> 2026년 인터넷중독전문상담사 자격검정 OCR/OMR 답안지</li>
-          <li>• <b>과목 구성:</b> A(이해), B(진단), C(기법), D(이론), E(정책) 각 20문항 (총 100문항)</li>
-          <li>• <b>수험번호:</b> 9자리 자동 판독 / <b>문제유형:</b> A형, B형 자동 판독</li>
-        </ul>
+        <div class="flex justify-between items-start mb-3 gap-3">
+          <h2 class="text-lg font-bold">원본 답안지 형식 및 기준 설정</h2>
+          <button onclick="openExamDialog()" class="shrink-0 bg-slate-700 hover:bg-slate-800 text-white text-sm font-bold px-4 py-2 rounded-lg inline-flex items-center gap-2"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.5.5 0 0 0-.48-.41h-3.84a.5.5 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.61.22L2.74 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.37.3.61.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg> 시험 설정</button>
+        </div>
+        <div id="exam-current" class="text-sm mb-2"></div>
+        <ul id="exam-bullets" class="text-sm space-y-2 text-slate-600 mb-6"></ul>
         <div class="space-y-4 border-t pt-4">
           <div class="flex justify-between items-center">
             <label class="font-semibold text-sm">문항당 배점 <span id="score-info" class="text-xs font-normal text-slate-500">(과목 만점 100점 · 총점 만점 500점)</span></label>
             <input id="cfg-score" type="number" value="5" step="0.5" min="0.5" oninput="updateScoreInfo()" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
-            <label class="font-semibold text-sm">합격 평균 <span class="text-xs font-normal text-slate-500">(과락이 없고 5과목 평균이 이 점수 이상이면 합격)</span></label>
+            <label class="font-semibold text-sm">합격 평균 <span id="pa-info" class="text-xs font-normal text-slate-500">(과락이 없고 과목 점수 평균이 이 점수 이상이면 합격)</span></label>
             <input id="cfg-passavg" type="number" value="60" step="0.5" min="0" class="border rounded px-3 py-1.5 w-28 text-right font-bold">
           </div>
           <div class="flex justify-between items-center">
@@ -71,7 +71,7 @@
         <div id="key-summary" class="text-sm bg-slate-50 p-4 rounded border flex-1 overflow-y-auto max-h-64 font-mono"></div>
       </div>
 
-      <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+      <div id="test-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
         <h2 class="text-lg font-bold mb-1">테스트용 가상 답안지</h2>
         <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 [테스트] 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
         <div class="flex flex-wrap gap-2 mb-4">
@@ -166,13 +166,7 @@
       </div>
       <div id="res-list" class="bg-white p-5 rounded-xl shadow-sm border overflow-x-auto">
         <table class="w-full text-sm text-center border-collapse">
-          <thead class="bg-slate-100">
-            <tr>
-              <th class="p-2 border">순번</th><th class="p-2 border">파일명</th><th class="p-2 border">유형</th><th class="p-2 border">수험번호</th>
-              <th class="p-2 border">A.이해</th><th class="p-2 border">B.진단</th><th class="p-2 border">C.기법</th><th class="p-2 border">D.이론</th><th class="p-2 border">E.정책</th>
-              <th class="p-2 border">총점</th><th class="p-2 border">평균</th><th class="p-2 border">판정</th><th class="p-2 border">검수상태</th>
-            </tr>
-          </thead>
+          <thead class="bg-slate-100"><tr id="result-thead-row"></tr></thead>
           <tbody id="result-tbody"></tbody>
         </table>
       </div>
@@ -192,6 +186,22 @@
       <button onclick="document.getElementById('pw-dlg').close()" class="flex-1 bg-slate-300 font-bold py-2 rounded-lg">취소</button>
     </div>
   </dialog>
+  <dialog id="exam-dlg" class="rounded-xl p-0 shadow-xl border w-[min(1120px,96vw)] max-h-[92vh] overflow-hidden">
+    <div class="flex flex-col max-h-[92vh]">
+      <div class="flex justify-between items-center px-6 py-4 border-b bg-slate-50">
+        <div><h3 class="text-lg font-bold">시험 설정</h3><p class="text-xs text-slate-500">시험명, 과목 구성, 수험번호, 문제 유형을 설정합니다. 시험마다 정답과 채점 결과가 따로 저장되며, 여러 시험을 만들어 전환할 수 있습니다.</p></div>
+        <button onclick="document.getElementById('exam-dlg').close()" class="px-4 py-2 rounded-lg border bg-white font-bold text-sm">닫기</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-0 overflow-hidden">
+        <div class="md:col-span-4 border-r p-4 overflow-y-auto bg-slate-50/50 max-h-[70vh]">
+          <button onclick="newExam()" class="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-2 rounded-lg mb-3 text-sm">+ 새 시험 추가</button>
+          <div id="exam-list" class="space-y-2"></div>
+        </div>
+        <div id="exam-form" class="md:col-span-8 p-5 overflow-y-auto max-h-[70vh]"></div>
+      </div>
+    </div>
+  </dialog>
+
   <script>
     // 세션 만료(401) 시 로그인 화면으로 이동
     const _fetch = window.fetch;
@@ -210,13 +220,39 @@
     }
     async function logout() { await fetch('/api/logout', {method:'POST'}); location.href = '/login'; }
 
-    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 5, pass_average: 60, subject_fail_cutoff: 40, threshold: 0.65 };
+    let currentConfig = { answer_keys: { A: [], B: [] }, score_per_q: 5, pass_average: 60, subject_fail_cutoff: 40, threshold: 0.65,
+      exam: { name: '', title: '', forms: ['A', 'B'], form_rule: 'half_swap', choices: 5, id_digits: 9, subjects: [] },
+      exam_info: { total_questions: 100, codes: ['A', 'B', 'C', 'D', 'E'], ranges: [], is_default_structure: true } };
+    const EX = () => currentConfig.exam, EI = () => currentConfig.exam_info, codesOf = () => EI().codes || [];
     let gradedList = [];
     const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     function updateScoreInfo() {
-      const v = parseFloat(document.getElementById('cfg-score').value) || 0;
-      document.getElementById('score-info').innerText = `(과목 만점 ${+(v * 20).toFixed(1)}점 · 총점 만점 ${+(v * 100).toFixed(1)}점)`;
+      const v = parseFloat(document.getElementById('cfg-score').value) || 0, r = EI().ranges || [];
+      const maxes = r.map(x => +((x.end - x.start + 1) * v).toFixed(1));
+      const same = maxes.length && maxes.every(m => m === maxes[0]);
+      document.getElementById('score-info').innerText = same ? `(과목 만점 ${maxes[0]}점 · 총점 만점 ${+(EI().total_questions * v).toFixed(1)}점)`
+        : `(과목 만점 ${r.map((x, i) => x.short + ' ' + maxes[i]).join(' · ')} / 총점 만점 ${+(EI().total_questions * v).toFixed(1)}점)`;
+    }
+    // 시험 설정이 바뀌면 화면의 시험 관련 문구/표를 다시 그린다
+    function applyExamUI() {
+      const e = EX(), ei = EI();
+      document.getElementById('hdr-sub').innerText = `${e.title || e.name} | ocr.ehancom.com`;
+      document.title = `OCR_자동 채점 프로그램 (${e.name})`;
+      document.getElementById('exam-current').innerHTML = `현재 시험: <b class="text-blue-900">${esc(e.name)}</b>`;
+      const counts = (ei.ranges || []).map(x => x.end - x.start + 1), same = counts.every(c => c === counts[0]);
+      const rel = e.form_rule === 'half_swap' ? ' (각 과목의 앞 절반과 뒤 절반 블록을 맞바꿈)' : '';
+      document.getElementById('exam-bullets').innerHTML =
+        `<li>• <b>적용 양식:</b> ${esc(e.title || e.name)}</li>
+         <li>• <b>과목 구성:</b> ${(ei.ranges || []).map(x => `${x.code}(${esc(x.short)}${same ? '' : ' ' + (x.end - x.start + 1) + '문항'})`).join(', ')}${same ? ' 각 ' + counts[0] + '문항' : ''} (총 ${ei.total_questions}문항, ${e.choices}지선다)</li>
+         <li>• <b>수험번호:</b> ${e.id_digits}자리 자동 판독 / <b>문제유형:</b> ${e.forms.map(f => f + '형').join(', ')}${e.forms.length > 1 ? ' 자동 판독' : ''}${rel}</li>`;
+      document.getElementById('pa-info').innerText = `(과락이 없고 ${(ei.ranges || []).length}과목 점수의 평균이 이 점수 이상이면 합격)`;
+      document.getElementById('test-card').classList.toggle('hidden', !ei.is_default_structure);
+      updateScoreInfo();
+      const th = ['순번', '파일명', '유형', '수험번호'].map(t => `<th class="p-2 border">${t}</th>`).join('') +
+        (ei.ranges || []).map(x => `<th class="p-2 border" title="${esc(x.name)}">${x.code}.${esc(x.short)}</th>`).join('') +
+        ['총점', '평균', '판정', '검수상태'].map(t => `<th class="p-2 border">${t}</th>`).join('');
+      document.getElementById('result-thead-row').innerHTML = th;
     }
     function showTab(t) {
       if (t === 'result') setTimeout(renderResultTab, 0);
@@ -231,6 +267,7 @@
     async function loadConfig() {
       const res = await fetch('/api/config');
       currentConfig = await res.json();
+      applyExamUI();
       document.getElementById('cfg-score').value = currentConfig.score_per_q;
       document.getElementById('cfg-passavg').value = currentConfig.pass_average;
       document.getElementById('cfg-subfail').value = currentConfig.subject_fail_cutoff;
@@ -239,20 +276,30 @@
       renderKeySummary();
     }
 
+    const otherQ = q => {   // 다른 유형에서 같은 문제의 번호 (시험 설정의 '유형 간 관계'에 따름)
+      if (EX().form_rule !== 'half_swap') return q;
+      const r = (EI().ranges || []).find(x => q >= x.start && q <= x.end); if (!r) return q;
+      const n = r.end - r.start + 1; return r.start + ((q - r.start) + n / 2) % n;
+    };
     function renderKeySummary() {
-      const box = document.getElementById('key-summary'), conf = currentConfig.key_conflicts || [];
-      const confB = conf.map(otherQ);
-      let html = conf.length ? `<div class="mb-2 p-2 rounded bg-red-50 text-red-700 text-xs font-sans">A형과 B형 정답이 서로 맞지 않는 문항이 ${conf.length}개 있습니다. (A형 번호 ${conf.slice(0, 12).join(', ')}${conf.length > 12 ? ' ...' : ''}) 정답을 확인하세요.</div>` : '';
-      html += '<div class="mb-2 text-xs text-slate-500 font-sans">A형 n번은 B형 (n±10)번과 같은 문제입니다 (과목마다 1~10번 / 11~20번 블록 교체). 한쪽 정답만 등록하면 다른 쪽은 자동 생성됩니다.</div><div class="grid grid-cols-5 gap-2">';
-      for (let i = 0; i < 100; i++) {
-        const n = i + 1;
-        html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${n}.</b> <span class="${conf.includes(n) ? 'text-red-600 font-bold' : ''}">A:${currentConfig.answer_keys.A[i]}</span> / <span class="${confB.includes(n) ? 'text-red-600 font-bold' : ''}">B:${currentConfig.answer_keys.B[i]}</span></div>`;
+      const box = document.getElementById('key-summary'), conf = currentConfig.key_conflicts || [], e = EX(), n = EI().total_questions;
+      const paired = e.form_rule === 'half_swap' && e.forms.length === 2, confB = conf.map(otherQ);
+      let html = conf.length ? `<div class="mb-2 p-2 rounded bg-red-50 text-red-700 text-xs font-sans">${e.forms[0]}형과 ${e.forms[1]}형 정답이 서로 맞지 않는 문항이 ${conf.length}개 있습니다. (${e.forms[0]}형 번호 ${conf.slice(0, 12).join(', ')}${conf.length > 12 ? ' ...' : ''}) 정답을 확인하세요.</div>` : '';
+      if (paired) html += `<div class="mb-2 text-xs text-slate-500 font-sans">${e.forms[0]}형 n번은 ${e.forms[1]}형 (n±과목 문항 수/2)번과 같은 문제입니다 (과목마다 앞 절반/뒤 절반 블록 교체). 한쪽 정답만 등록하면 다른 쪽은 자동 생성됩니다.</div>`;
+      html += '<div class="grid grid-cols-5 gap-2">';
+      for (let i = 0; i < n; i++) {
+        const q = i + 1, cells = e.forms.map((f, k) => {
+          const bad = paired && (k === 0 ? conf.includes(q) : confB.includes(q));
+          return `<span class="${bad ? 'text-red-600 font-bold' : ''}">${e.forms.length > 1 ? f + ':' : ''}${(currentConfig.answer_keys[f] || [])[i]}</span>`;
+        });
+        html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${q}.</b> ${cells.join(' / ')}</div>`;
       }
       box.innerHTML = html + '</div>';
     }
-
-    const otherQ = q => { const s = Math.floor((q - 1) / 20), i = (q - 1) % 20; return s * 20 + (i + 10) % 20 + 1; };   // A형 n번 = B형 otherQ(n)번 (과목마다 1~10번 / 11~20번 블록 교체)
-    function conflictText(c) { return c && c.length ? `\n\n주의: A형과 B형 정답이 서로 맞지 않는 문항이 ${c.length}개 있습니다. (A형 번호: ${c.slice(0, 15).join(', ')}${c.length > 15 ? ' ...' : ''})\nA형 n번은 B형 (n±10)번과 같은 문제입니다. 정답을 다시 확인하세요.` : ''; }
+    function conflictText(c) {
+      const f = EX().forms;
+      return c && c.length ? `\n\n주의: ${f[0]}형과 ${f[1]}형 정답이 서로 맞지 않는 문항이 ${c.length}개 있습니다. (${f[0]}형 번호: ${c.slice(0, 15).join(', ')}${c.length > 15 ? ' ...' : ''})\n같은 문제가 맞는지(과목별 앞/뒤 절반 교체) 정답을 다시 확인하세요.` : '';
+    }
     async function saveConfig(keys) {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_average = parseFloat(document.getElementById('cfg-passavg').value);
@@ -267,11 +314,15 @@
     }
 
     function downloadSampleKey() {
-      const rows = [];
-      for (let i = 0; i < 100; i++) rows.push({ '문항번호': i + 1, 'A형': currentConfig.answer_keys.A[i], 'B형': currentConfig.answer_keys.B[i] });
+      const rows = [], f = EX().forms;
+      for (let i = 0; i < EI().total_questions; i++) {
+        const r = { '문항번호': i + 1 };
+        f.forEach(t => { r[t + '형'] = currentConfig.answer_keys[t][i]; });
+        rows.push(r);
+      }
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), '정답지');
-      XLSX.writeFile(wb, 'OCR_정답지_양식샘플.xlsx');
+      XLSX.writeFile(wb, `정답지_양식샘플_${EX().name}.xlsx`);
     }
 
     function uploadKeyExcel(e) {
@@ -282,11 +333,12 @@
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         const keys = {};
-        ['A', 'B'].forEach(t => {
-          const col = data.slice(0, 100).map(r => parseInt(r[t + '형']));
-          if (col.length === 100 && col.every(v => v >= 1 && v <= 5)) keys[t] = col;
+        const n = EI().total_questions, ch = EX().choices;
+        EX().forms.forEach(t => {
+          const col = data.slice(0, n).map(r => parseInt(r[t + '형']));
+          if (col.length === n && col.every(v => v >= 1 && v <= ch)) keys[t] = col;
         });
-        if (!Object.keys(keys).length) { alert('정답을 읽지 못했습니다. 문항번호/A형/B형 열에 1~5 숫자가 100행 모두 있어야 합니다.'); return; }
+        if (!Object.keys(keys).length) { alert(`정답을 읽지 못했습니다. 문항번호/${EX().forms.map(t => t + '형').join('/')} 열에 1~${ch} 숫자가 ${n}행 모두 있어야 합니다.`); return; }
         await saveConfig(keys);
       };
       reader.readAsBinaryString(file);
@@ -403,14 +455,14 @@
         const badge = item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>';
         html2 += `<tr class="border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
-          ${['A','B','C','D','E'].map(c => subCell(item, c)).join('')}
+          ${codesOf().map(c => subCell(item, c)).join('')}
           <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${item.average.toFixed(1)}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });
       document.getElementById('result-tbody').innerHTML = html2;
       const n = r => list.filter(x => x.result === r).length;
       document.getElementById('result-summary').innerHTML = `총 응시자: ${list.length}명 &nbsp;|&nbsp; 합격 <span class="text-emerald-700">${n('합격')}</span> · 불합격 ${n('불합격')} · 과락 <span class="text-red-600">${n('과락')}</span>`
         + (sc === 'test' ? ' <span class="text-xs font-normal text-violet-600">(테스트 결과)</span>' : '')
-        + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 평균 ${currentConfig.pass_average}점 이상 (과목 만점 ${currentConfig.score_per_q * 20} / 총점 만점 ${currentConfig.score_per_q * 100})</div>`;
+        + `<div class="text-xs font-normal text-slate-500">과락: 한 과목이라도 ${currentConfig.subject_fail_cutoff}점 미만 · 합격: 과락 없이 평균 ${currentConfig.pass_average}점 이상 (총점 만점 ${+(EI().total_questions * currentConfig.score_per_q).toFixed(1)})</div>`;
       const on = 'bg-blue-700 text-white border-blue-700', off = 'bg-white text-slate-600 border-slate-300';
       document.getElementById('rv-list').className = 'px-5 py-2 rounded-lg font-bold border ' + (resultView === 'list' ? on : off);
       document.getElementById('rv-stats').className = 'px-5 py-2 rounded-lg font-bold border ' + (resultView === 'stats' ? on : off);
@@ -421,6 +473,7 @@
     function setScope(v) { resultScope = v; itemForm = 0; renderResultTab(); }
     function setResultView(v) { resultView = v; renderResultTab(); }
     function downloadExcel() { window.location.href = '/api/export/excel?scope=' + currentScope(); }
+    function downloadStatsExcel() { window.location.href = '/api/export/excel?part=stats&scope=' + currentScope(); }
 
     // ---------- 통계 ----------
     const FLAG = {key: ['정답키 확인', 'bg-red-100 text-red-700'], hard: ['매우 어려움', 'bg-orange-100 text-orange-700'],
@@ -430,7 +483,7 @@
     const f1 = v => v == null ? '-' : Number(v).toFixed(1);
 
     // 점수 분포 SVG 차트 (외부 라이브러리 없이 폐쇄망에서도 동작)
-    function distChart(dist, kind) {
+    function distChart(dist, kind, full) {
       const W = 560, H = 300, L = 46, R = 16, T = 26, B = 52, pw = W - L - R, ph = H - T - B, n = dist.length, slot = pw / n;
       const mx = Math.max(...dist.map(x => x.count), 0), step = Math.max(1, Math.ceil(mx / 5)), yMax = Math.max(step * Math.ceil(mx / step), step * 2);
       const Y = v => T + ph - v / yMax * ph, cx = i => L + slot * i + slot / 2;
@@ -447,7 +500,7 @@
           dist.map((x, i) => `<circle cx="${cx(i)}" cy="${Y(x.count)}" r="4.5" fill="#fff" stroke="#059669" stroke-width="2.5"/>` +
             (x.count ? `<text x="${cx(i)}" y="${Y(x.count) - 10}" text-anchor="middle" font-size="12" font-weight="700" fill="#047857">${x.count}</text>` : '')).join('');
       }
-      const px = L + (currentConfig.pass_average / 100) * pw;   // 합격 평균 기준선
+      const px = L + Math.min(currentConfig.pass_average / (full || 100), 1) * pw;   // 합격 평균 기준선
       const pass = `<line x1="${px}" y1="${T - 4}" x2="${px}" y2="${T + ph}" stroke="#dc2626" stroke-dasharray="5 4"/><text x="${px}" y="${T - 9}" text-anchor="middle" font-size="11" font-weight="700" fill="#dc2626">합격 평균 ${currentConfig.pass_average}</text>`;
       const xl = dist.map((x, i) => `<text x="${cx(i)}" y="${T + ph + 18}" text-anchor="middle" font-size="11" fill="#475569">${x.label}</text>`).join('');
       return `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="점수 분포">${g}${body}${pass}${xl}
@@ -495,13 +548,12 @@
         <line x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}" stroke="#94a3b8"/>
         <text transform="translate(13 ${T + ph / 2}) rotate(-90)" text-anchor="middle" font-size="12" fill="#334155">${o.yTitle || ''}</text></svg>`;
     }
-    const SHORT_SUBJ = {A: 'A. 이해', B: 'B. 진단', C: 'C. 기법', D: 'D. 이론', E: 'E. 정책'};
-    function chartPair(t1, c1, t2, c2) {
+        function chartPair(t1, c1, t2, c2) {
       return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5 pt-4 border-t">
         <div><h4 class="font-bold text-sm mb-1">${t1}</h4>${c1}</div><div><h4 class="font-bold text-sm mb-1">${t2}</h4>${c2}</div></div>`;
     }
     function subjectCharts(d) {
-      const lab = d.subjects.map(x => SHORT_SUBJ[x.code]), mx = d.score_per_q * 20;
+      const lab = d.subjects.map(x => x.code + '. ' + x.short), mx = Math.max(...d.subjects.map(x => x.max_score));
       const refs = [{value: currentConfig.pass_average, label: `합격 평균 ${currentConfig.pass_average}`, color: '#dc2626'}];
       if (currentConfig.subject_fail_cutoff > 0) refs.push({value: currentConfig.subject_fail_cutoff, label: `과락 ${currentConfig.subject_fail_cutoff}`, color: '#ea580c'});
       return chartPair('과목별 평균 점수 (세로 막대)', catChart('bar', lab, [{name: '평균', values: d.subjects.map(x => x.mean), color: '#2563eb'}], {yMax: mx, yTitle: `점수 (${mx}점 만점)`, refs}),
@@ -512,7 +564,7 @@
     }
     function formCharts(d) {
       const lab = d.forms_summary.map(x => x.form + '형 (' + x.n + '명)');
-      return chartPair('유형별 평균 점수 (세로 막대)', catChart('bar', lab, [{name: '평균점수', values: d.forms_summary.map(x => x.avg_mean), color: '#2563eb'}], {yMax: 100, yTitle: '평균점수 (100점 만점)', refs: [{value: currentConfig.pass_average, label: `합격 평균 ${currentConfig.pass_average}`, color: '#dc2626'}]}),
+      return chartPair('유형별 평균 점수 (세로 막대)', catChart('bar', lab, [{name: '평균점수', values: d.forms_summary.map(x => x.avg_mean), color: '#2563eb'}], {yMax: d.avg_full, yTitle: `평균점수 (${d.avg_full}점 만점)`, refs: [{value: currentConfig.pass_average, label: `합격 평균 ${currentConfig.pass_average}`, color: '#dc2626'}]}),
         '유형별 합격률 / 과락률 (꺾은선)', catChart('line', lab, [
           {name: '합격률', values: d.forms_summary.map(x => x.pass_rate), color: '#059669', label: 'up'},
           {name: '과락률', values: d.forms_summary.map(x => Math.round(x.cut_n / x.n * 1000) / 10), color: '#dc2626', label: 'down'}], {yMax: 100, unit: '%', yTitle: '비율 (%)'}));
@@ -523,10 +575,11 @@
       const d = await (await fetch('/api/stats?scope=' + currentScope())).json();
       lastStats = d;
       if (!d.n) { box.innerHTML = '<div class="bg-white p-8 rounded-xl border text-center text-slate-500">통계를 낼 채점 결과가 없습니다.</div>'; return; }
-      const sm = d.summary, tmax = d.score_per_q * 100;
+      const sm = d.summary, tmax = +(EI().total_questions * d.score_per_q).toFixed(1);
       const card = (t, v, sub) => `<div class="bg-white border rounded-xl p-4"><div class="text-xs text-slate-500">${t}</div><div class="text-2xl font-bold text-blue-900 mt-1">${v}</div><div class="text-xs text-slate-500 mt-1">${sub || '&nbsp;'}</div></div>`;
       const kr = d.forms.map(f => `${f.label.split(' ')[0]} ${f.kr20 == null ? '-' : f.kr20}`).join(' / ');
-      let h = `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      let h = `<div class="flex justify-end"><button onclick="downloadStatsExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-lg shadow">통계 엑셀 다운로드 (차트 포함)</button></div>` +
+        `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         ${card('응시자', sm.n + '명', `검수필요 ${sm.review}건`)}
         ${card('합격률', f1(sm.pass_rate) + '%', `합격 ${sm.pass} · 불합격 ${sm.fail} · 과락 ${sm.cut}`)}
         ${card('과락률', f1(sm.cut_rate) + '%', `${sm.cut}명`)}
@@ -536,23 +589,23 @@
       </div>`;
       // 분포: 세로 막대 + 꺾은선 (각각 페이지 절반)
       h += `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (세로 막대)</h3>${distChart(d.distribution, 'bar')}</div>
-        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (꺾은선)</h3>${distChart(d.distribution, 'line')}</div></div>`;
+        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (세로 막대)</h3>${distChart(d.distribution, 'bar', d.avg_full)}</div>
+        <div class="bg-white border rounded-xl p-5"><h3 class="font-bold mb-2">점수 분포 (꺾은선)</h3>${distChart(d.distribution, 'line', d.avg_full)}</div></div>`;
       // 과목별
       h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-3">과목별 통계</h3><table class="w-full text-sm text-center border-collapse">
-        <thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">평균 (${d.score_per_q * 20}점 만점)</th><th class="p-2 border">표준편차</th><th class="p-2 border">최고</th><th class="p-2 border">최저</th><th class="p-2 border">정답률</th><th class="p-2 border">난이도</th><th class="p-2 border">과락 인원</th><th class="p-2 border">과락률</th></tr></thead><tbody>` +
-        d.subjects.map(s => `<tr class="border-b"><td class="p-2 text-left font-semibold">${s.code}. ${esc(s.name)}</td><td class="p-2">${f1(s.mean)}</td><td class="p-2">${f1(s.sd)}</td><td class="p-2">${s.max}</td><td class="p-2">${s.min}</td>
+        <thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">평균 점수 (만점)</th><th class="p-2 border">표준편차</th><th class="p-2 border">최고</th><th class="p-2 border">최저</th><th class="p-2 border">정답률</th><th class="p-2 border">난이도</th><th class="p-2 border">과락 인원</th><th class="p-2 border">과락률</th></tr></thead><tbody>` +
+        d.subjects.map(s => `<tr class="border-b"><td class="p-2 text-left font-semibold">${s.code}. ${esc(s.name)}</td><td class="p-2">${f1(s.mean)} <span class="text-xs text-slate-400">(${s.max_score})</span></td><td class="p-2">${f1(s.sd)}</td><td class="p-2">${s.max}</td><td class="p-2">${s.min}</td>
           <td class="p-2 font-bold">${f1(s.correct_rate)}%</td><td class="p-2"><span class="px-2 py-0.5 rounded font-bold ${LV[s.level]}">${s.level}</span></td><td class="p-2 ${s.cut_n ? 'text-red-600 font-bold' : ''}">${s.cut_n}명</td><td class="p-2">${f1(s.cut_rate)}%</td></tr>`).join('') + `</tbody></table>` + subjectCharts(d) + `</div>`;
       // 유형별
       h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-3">문제 유형별 비교</h3><table class="w-full text-sm text-center border-collapse">
         <thead class="bg-slate-100"><tr><th class="p-2 border">유형</th><th class="p-2 border">응시자</th><th class="p-2 border">총점 평균</th><th class="p-2 border">평균점수 평균</th><th class="p-2 border">합격률</th><th class="p-2 border">과락 인원</th></tr></thead><tbody>` +
         d.forms_summary.map(f => `<tr class="border-b"><td class="p-2 font-bold">${f.form}형</td><td class="p-2">${f.n}명</td><td class="p-2">${f1(f.total_mean)}</td><td class="p-2">${f1(f.avg_mean)}</td><td class="p-2">${f1(f.pass_rate)}%</td><td class="p-2">${f.cut_n}명</td></tr>`).join('') + `</tbody></table>` + formCharts(d) + `</div>`;
       if (d.blocks && d.blocks.length) {
-        const nA = d.blocks[0].n_a, nB = d.blocks[0].n_b, small = Math.min(nA, nB) < 10;
+        const nA = d.blocks[0].n_a, nB = d.blocks[0].n_b, fa = d.blocks[0].form_a, fb = d.blocks[0].form_b, small = Math.min(nA, nB) < 10;
         h += `<div class="bg-white border rounded-xl p-5 overflow-x-auto"><h3 class="font-bold mb-1">블록 정답률 비교 (같은 문제를 앞/뒤에서 풀었을 때)</h3>
-          <p class="text-xs text-slate-500 mb-1">A형 번호 기준 블록입니다. 같은 문제를 A형 응시자는 앞(또는 뒤)에서, B형 응시자는 반대 위치에서 풉니다. 차이가 크면 문제 순서(피로도 등)의 영향이거나 두 집단의 실력 차이일 수 있습니다.</p>
-          <p class="text-xs mb-3 ${small ? 'text-amber-700 font-semibold' : 'text-slate-500'}">A형 응시자 ${nA}명 · B형 응시자 ${nB}명${small ? ' (한쪽이 10명 미만이라 차이 강조는 하지 않으며, 참고용입니다)' : ''}</p>
-          <table class="w-full text-sm text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">A형 번호</th><th class="p-2 border">A형 응시자 정답률 (${nA}명)</th><th class="p-2 border">B형 응시자 정답률 (${nB}명)</th><th class="p-2 border">차이 (B-A)</th></tr></thead><tbody>` +
+          <p class="text-xs text-slate-500 mb-1">${fa}형 번호 기준 블록입니다. 같은 문제를 ${fa}형 응시자는 앞(또는 뒤)에서, ${fb}형 응시자는 반대 위치에서 풉니다. 차이가 크면 문제 순서(피로도 등)의 영향이거나 두 집단의 실력 차이일 수 있습니다.</p>
+          <p class="text-xs mb-3 ${small ? 'text-amber-700 font-semibold' : 'text-slate-500'}">${fa}형 응시자 ${nA}명 · ${fb}형 응시자 ${nB}명${small ? ' (한쪽이 10명 미만이라 차이 강조는 하지 않으며, 참고용입니다)' : ''}</p>
+          <table class="w-full text-sm text-center border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">과목</th><th class="p-2 border">${fa}형 번호</th><th class="p-2 border">${fa}형 응시자 정답률 (${nA}명)</th><th class="p-2 border">${fb}형 응시자 정답률 (${nB}명)</th><th class="p-2 border">차이 (${fb}-${fa})</th></tr></thead><tbody>` +
           d.blocks.map(b => `<tr class="border-b"><td class="p-2 text-left">${esc(b.subject_name)}</td><td class="p-2">${b.block}</td><td class="p-2">${f1(b.a_rate)}%</td><td class="p-2">${f1(b.b_rate)}%</td><td class="p-2 ${!small && b.diff != null && Math.abs(b.diff) >= 15 ? 'text-red-600 font-bold' : ''}">${b.diff == null ? '-' : (b.diff > 0 ? '+' : '') + f1(b.diff) + '%p'}</td></tr>`).join('') + `</tbody></table></div>`;
       }
       // 문항 분석
@@ -563,7 +616,7 @@
         <span id="item-note" class="text-xs text-slate-500"></span></div>
         <div class="overflow-x-auto max-h-[560px] overflow-y-auto"><table class="w-full text-xs text-center border-collapse">
         <thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border">문항</th><th class="p-2 border" title="다른 유형에서 같은 문제의 번호">대응 번호</th><th class="p-2 border">과목</th><th class="p-2 border">정답</th><th class="p-2 border">정답률</th><th class="p-2 border">오답률</th>
-        <th class="p-2 border">1번</th><th class="p-2 border">2번</th><th class="p-2 border">3번</th><th class="p-2 border">4번</th><th class="p-2 border">5번</th><th class="p-2 border">무표기</th><th class="p-2 border">이중</th><th class="p-2 border">변별도</th><th class="p-2 border">검토</th></tr></thead>
+        ${Object.keys(d.forms[0].items[0].choices).filter(c => /^\d+$/.test(c)).map(c => `<th class="p-2 border">${c}번</th>`).join('')}<th class="p-2 border">무표기</th><th class="p-2 border">이중</th><th class="p-2 border">변별도</th><th class="p-2 border">검토</th></tr></thead>
         <tbody id="item-tbody"></tbody></table></div>
         <details class="mt-3 text-xs text-slate-600"><summary class="cursor-pointer font-semibold">용어 설명</summary><ul class="list-disc ml-5 mt-2 space-y-1">
           <li><b>정답률</b>: 맞힌 응시자 비율. 80% 이상 쉬움, 40~80% 보통, 40% 미만 어려움.</li>
@@ -590,7 +643,7 @@
         const flags = it.flags.map(x => `<span class="px-1.5 py-0.5 rounded font-bold ${FLAG[x][1]}">${FLAG[x][0]}</span>`).join(' ');
         return `<tr class="${it.flags.length ? 'bg-amber-50/50' : ''}"><td class="p-1.5 border font-bold">${it.q}</td><td class="p-1.5 border text-slate-500">${it.alt_q}</td><td class="p-1.5 border text-left text-[11px] leading-tight min-w-[110px]">${esc(it.subject_name)}</td><td class="p-1.5 border font-bold">${it.answer}</td>
           <td class="p-1.5 border font-bold">${f1(it.correct_rate)}%</td><td class="p-1.5 border">${f1(it.wrong_rate)}%</td>
-          ${['1','2','3','4','5','무표기','이중'].map(ch).join('')}<td class="p-1.5 border">${it.disc == null ? '-' : it.disc.toFixed(2)}</td><td class="p-1.5 border text-left">${flags}</td></tr>`;
+          ${[...Object.keys(it.choices)].map(ch).join('')}<td class="p-1.5 border">${it.disc == null ? '-' : it.disc.toFixed(2)}</td><td class="p-1.5 border text-left">${flags}</td></tr>`;
       }).join('');
     }
 
@@ -640,6 +693,123 @@
       alert('채점 결과를 모두 삭제했습니다.');
     }
     const clearAllResults = deleteAllResults;
+
+    // ---------- 시험 설정 (시험 목록 / 편집) ----------
+    let examData = null, editId = null, editDraft = null;
+    const LETTERS = 'ABCDEFGHIJ';
+    async function openExamDialog() { await loadExams(); document.getElementById('exam-dlg').showModal(); }
+    async function loadExams(selectId) {
+      examData = await (await fetch('/api/exams')).json();
+      const want = selectId || editId || examData.active;
+      startEdit(examData.exams.some(e => e.id === want) ? want : examData.active);
+    }
+    function startEdit(id) {
+      editId = id; editDraft = JSON.parse(JSON.stringify(examData.exams.find(x => x.id === id).exam));
+      renderExamList(); renderExamForm();
+    }
+    function renderExamList() {
+      document.getElementById('exam-list').innerHTML = examData.exams.map(e => {
+        const n = e.counts.real + e.counts.test, sel = e.id === editId;
+        return `<div onclick="startEdit('${e.id}')" class="cursor-pointer rounded-lg border p-3 ${sel ? 'border-blue-600 bg-blue-50' : 'bg-white hover:bg-slate-50'}">
+          <div class="flex justify-between items-start gap-2"><div class="font-bold text-sm break-words">${esc(e.name)}</div>
+            ${e.active ? '<span class="shrink-0 px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 text-xs font-bold">사용 중</span>' : ''}</div>
+          <div class="text-xs text-slate-500 mt-1">${e.subjects}과목 · ${e.questions}문항 · 유형 ${e.forms.join(', ')} · 채점 결과 ${n}건</div>
+          <div class="flex gap-1 mt-2" onclick="event.stopPropagation()">
+            ${e.active ? '' : `<button onclick="activateExam('${e.id}')" class="px-2 py-1 rounded bg-blue-700 text-white text-xs font-bold">이 시험 사용</button>`}
+            <button onclick="cloneExam('${e.id}')" class="px-2 py-1 rounded border text-xs font-bold bg-white">복제</button>
+            ${e.active ? '' : `<button onclick="deleteExam('${e.id}')" class="px-2 py-1 rounded border border-red-300 text-red-600 text-xs font-bold bg-white">삭제</button>`}
+          </div></div>`;
+      }).join('');
+    }
+    function layoutOf(id) { return examData.layouts.find(l => l.id === id) || examData.layouts[0]; }
+    function renderExamForm() {
+      const d = editDraft, sum = examData.exams.find(x => x.id === editId), lay = layoutOf(d.layout), locked = sum.locked;
+      const total = d.subjects.reduce((a, s) => a + (parseInt(s.count) || 0), 0), dis = locked ? 'disabled' : '';
+      let start = 1;
+      const rows = d.subjects.map((s, i) => {
+        const a = start, b = start + (parseInt(s.count) || 0) - 1; start = b + 1;
+        return `<tr class="border-b"><td class="p-1 text-center font-bold">${LETTERS[i]}</td>
+          <td class="p-1"><input value="${esc(s.name)}" oninput="editDraft.subjects[${i}].name = this.value" class="border rounded px-2 py-1 w-full" placeholder="과목 이름"></td>
+          <td class="p-1"><input value="${esc(s.short || '')}" oninput="editDraft.subjects[${i}].short = this.value" class="border rounded px-2 py-1 w-24" placeholder="약칭"></td>
+          <td class="p-1"><input type="number" min="1" value="${s.count}" ${dis} oninput="editDraft.subjects[${i}].count = parseInt(this.value) || 0; refreshExamInfo()" class="border rounded px-2 py-1 w-20 text-right ${locked ? 'bg-slate-100' : ''}"></td>
+          <td class="p-1 text-center text-xs text-slate-500">${s.count > 0 ? a + '~' + b + '번' : '-'}</td>
+          <td class="p-1 text-center">${d.subjects.length > 1 && !locked ? `<button onclick="removeSubject(${i})" class="px-2 py-1 rounded border text-red-600 text-xs font-bold">삭제</button>` : ''}</td></tr>`;
+      }).join('');
+      const chOpts = [2, 3, 4, 5].filter(n => n <= lay.choices_max).map(n => `<option value="${n}" ${d.choices === n ? 'selected' : ''}>${n}지선다</option>`).join('');
+      const formBoxes = lay.forms.map(f => `<label class="inline-flex items-center gap-1 mr-3"><input type="checkbox" ${d.forms.includes(f) ? 'checked' : ''} ${dis} onchange="toggleForm('${f}', this.checked)"> ${f}형</label>`).join('');
+      const ruleOpts = Object.entries(examData.form_rules).map(([k, v]) => `<option value="${k}" ${d.form_rule === k ? 'selected' : ''}>${esc(v)}</option>`).join('');
+      document.getElementById('exam-form').innerHTML = `
+        ${locked ? `<div class="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">이 시험에는 이미 채점 결과가 ${sum.counts.real + sum.counts.test}건 있어 <b>과목별 문항 수, 선택지, 수험번호 자릿수, 문제 유형, 답안지 양식</b>은 바꿀 수 없습니다. 시험명, 제목, 과목 이름/약칭은 바꿀 수 있습니다. 구조를 바꾸려면 결과를 먼저 삭제하거나 새 시험으로 만드세요.</div>` : ''}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <label class="text-sm font-semibold">시험명<input value="${esc(d.name)}" oninput="editDraft.name = this.value" class="mt-1 border rounded px-3 py-2 w-full font-normal" placeholder="예: 인터넷중독전문상담사 자격검정"></label>
+          <label class="text-sm font-semibold">답안지 제목 (적용 양식 표시명)<input value="${esc(d.title)}" oninput="editDraft.title = this.value" class="mt-1 border rounded px-3 py-2 w-full font-normal" placeholder="화면 상단에 표시됩니다"></label>
+        </div>
+        <label class="text-sm font-semibold block mb-4">답안지 양식 (문항 위치 좌표)
+          <select ${dis} onchange="changeLayout(this.value)" class="mt-1 border rounded px-3 py-2 w-full font-normal ${locked ? 'bg-slate-100' : ''}">${examData.layouts.map(l => `<option value="${l.id}" ${d.layout === l.id ? 'selected' : ''}>${esc(l.label)}</option>`).join('')}</select>
+          <span class="block text-xs font-normal text-slate-500 mt-1">이 양식은 최대 ${lay.capacity}문항, ${lay.choices_max}지선다, 수험번호 ${lay.id_digits_max}자리, 유형 ${lay.forms.join('/')}까지 지원합니다. 답안지 디자인이 다른 시험은 그 양식의 좌표를 따로 등록해야 합니다.</span></label>
+        <div class="mb-4"><div class="flex justify-between items-center mb-1"><div class="text-sm font-semibold">과목 구성</div><div id="exam-total" class="text-xs"></div></div>
+          <table class="w-full text-sm"><thead class="bg-slate-100 text-xs"><tr><th class="p-1 w-10">코드</th><th class="p-1 text-left">과목 이름</th><th class="p-1 text-left">약칭</th><th class="p-1">문항 수</th><th class="p-1">문항 범위</th><th class="p-1 w-14"></th></tr></thead><tbody>${rows}</tbody></table>
+          ${locked || d.subjects.length >= 10 ? '' : '<button onclick="addSubject()" class="mt-2 px-3 py-1.5 rounded border text-sm font-bold bg-white">+ 과목 추가</button>'}
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <label class="text-sm font-semibold">선택지 수<select ${dis} onchange="editDraft.choices = +this.value" class="mt-1 border rounded px-3 py-2 w-full font-normal ${locked ? 'bg-slate-100' : ''}">${chOpts}</select></label>
+          <label class="text-sm font-semibold">수험번호 자릿수<input type="number" min="1" max="${lay.id_digits_max}" value="${d.id_digits}" ${dis} oninput="editDraft.id_digits = parseInt(this.value) || 0" class="mt-1 border rounded px-3 py-2 w-full font-normal ${locked ? 'bg-slate-100' : ''}"></label>
+        </div>
+        <div class="mb-4"><div class="text-sm font-semibold mb-1">문제 유형</div><div class="text-sm">${formBoxes}</div>
+          <label class="text-sm font-semibold block mt-3">유형 간 관계<select ${dis} onchange="editDraft.form_rule = this.value" class="mt-1 border rounded px-3 py-2 w-full font-normal ${locked ? 'bg-slate-100' : ''}">${ruleOpts}</select>
+          <span class="block text-xs font-normal text-slate-500 mt-1">관계가 있으면 한쪽 정답만 등록해도 다른 쪽이 자동 생성되고, A/B 통합 문항 분석과 정답 교차 검증을 사용할 수 있습니다.</span></label></div>
+        <div class="flex gap-2 pt-3 border-t"><button onclick="saveExam()" class="bg-blue-700 hover:bg-blue-800 text-white font-bold px-6 py-2.5 rounded-lg">저장</button>
+          ${sum.active ? '<span class="self-center text-xs text-slate-500">사용 중인 시험입니다. 저장하면 바로 적용됩니다.</span>' : `<button onclick="saveExam(true)" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-2.5 rounded-lg">저장하고 이 시험 사용</button>`}</div>`;
+      refreshExamInfo();
+    }
+    function refreshExamInfo() {
+      const lay = layoutOf(editDraft.layout), total = editDraft.subjects.reduce((a, s) => a + (parseInt(s.count) || 0), 0), el = document.getElementById('exam-total');
+      if (el) el.innerHTML = `총 <b class="${total > lay.capacity ? 'text-red-600' : 'text-blue-900'}">${total}</b>문항 / 양식 용량 ${lay.capacity}문항`;
+    }
+    function addSubject() { editDraft.subjects.push({ name: '', short: '', count: 10 }); renderExamForm(); }
+    function removeSubject(i) { editDraft.subjects.splice(i, 1); renderExamForm(); }
+    function toggleForm(f, on) { const s = new Set(editDraft.forms); on ? s.add(f) : s.delete(f); editDraft.forms = [...s].sort(); }
+    function changeLayout(id) { editDraft.layout = id; const lay = layoutOf(id); editDraft.choices = Math.min(editDraft.choices, lay.choices_max); editDraft.id_digits = Math.min(editDraft.id_digits, lay.id_digits_max); editDraft.forms = editDraft.forms.filter(f => lay.forms.includes(f)); renderExamForm(); }
+    async function afterExamChanged() {
+      resultScope = null; selectedIds.clear();
+      await loadConfig(); await refreshResults(); loadTestInfo(); loadSystemInfo();
+      if (document.getElementById('res-stats') && resultView === 'stats') loadStats();
+    }
+    async function saveExam(activate) {
+      const r = await fetch('/api/exams/' + editId, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ exam: editDraft }) });
+      const d = await r.json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      if (activate) await fetch('/api/exams/' + editId + '/activate', { method: 'POST' });
+      await loadExams(editId);
+      if (activate || editId === examData.active) await afterExamChanged();
+      alert(activate ? '저장하고 이 시험으로 전환했습니다.' : (d.structure_changed ? '저장했습니다. 시험 구성이 바뀌어 정답은 초기화되었습니다. 정답을 다시 등록하세요.' : '저장했습니다.'));
+    }
+    async function newExam() {
+      const n = examData.exams.length + 1, ex = JSON.parse(JSON.stringify(examData.exams.find(e => e.id === examData.active).exam));
+      ex.name = '새 시험 ' + n; ex.title = '새 시험 ' + n + ' 답안지';
+      const d = await (await fetch('/api/exams', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ exam: ex }) })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      await loadExams(d.id);
+    }
+    async function cloneExam(id) {
+      const src = examData.exams.find(e => e.id === id), name = prompt('복제할 새 시험의 이름을 입력하세요.', src.name + ' (복사)');
+      if (!name) return;
+      const d = await (await fetch('/api/exams', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ copy_from: id, name }) })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      await loadExams(d.id);
+    }
+    async function activateExam(id) {
+      const d = await (await fetch('/api/exams/' + id + '/activate', { method: 'POST' })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      await loadExams(id); await afterExamChanged();
+    }
+    async function deleteExam(id) {
+      const e = examData.exams.find(x => x.id === id), n = e.counts.real + e.counts.test;
+      if (!confirm(`시험 "${e.name}"을(를) 삭제합니다.\n이 시험의 정답과 채점 결과 ${n}건이 모두 삭제되며 되돌릴 수 없습니다.`)) return;
+      const d = await (await fetch('/api/exams/' + id, { method: 'DELETE' })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      await loadExams();
+    }
 
     loadConfig().then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); });
   </script>

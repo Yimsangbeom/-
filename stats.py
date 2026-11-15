@@ -6,11 +6,8 @@ items 의 각 원소에 필요한 값:
 """
 import math
 
-from form_map import other_q, key_conflicts
+import exam as exam_mod
 
-SUBJECTS = [("A", "인터넷중독의 이해"), ("B", "인터넷중독의 진단과 평가"), ("C", "인터넷중독 상담기법"),
-            ("D", "인터넷중독 상담의 이론과 실제"), ("E", "인터넷중독의 정책과 법")]
-SUBJECT_NAME = dict(SUBJECTS)
 MIN_N_ITEM = 10      # 문항 분석(변별도/정답키 의심 등)을 판단하는 최소 응시자 수(유형별)
 
 
@@ -43,7 +40,10 @@ def _r(x, nd=1):
     return None if x is None else round(x, nd)
 
 
-def compute(items, spq):
+def compute(items, spq, exam=None):
+    exam = exam or exam_mod.default_exam()
+    subj = exam_mod.subject_ranges(exam)         # [(코드, 이름, 약칭, 시작, 끝)]
+    n_q = exam_mod.total_questions(exam)
     n = len(items)
     if n == 0:
         return {"n": 0}
@@ -66,20 +66,23 @@ def compute(items, spq):
     }
 
     # 점수 분포: 평균 점수를 10점 구간으로 (0~10 ... 90~100)
+    # 평균점수 만점 = 총점 만점 / 과목 수 (기본 시험은 100점). 만점이 100이 아니면 만점 대비 % 구간으로 나눈다.
+    avg_full = n_q * spq / len(subj) if subj else 100
     bins = [0] * 10
     for a in avgs:
-        bins[min(int(a // 10), 9)] += 1
-    distribution = [{"label": f"{i * 10}~{i * 10 + 10}", "count": bins[i]} for i in range(10)]
+        bins[min(int(a / avg_full * 10), 9) if avg_full else 0] += 1
+    unit = "" if abs(avg_full - 100) < 1e-9 else "%"
+    distribution = [{"label": f"{i * 10}~{i * 10 + 10}{unit}", "count": bins[i]} for i in range(10)]
 
     # 과목별
     subjects = []
-    smax = 20 * spq
-    for code, name in SUBJECTS:
+    for code, name, short, a0, b0 in subj:
+        smax = (b0 - a0 + 1) * spq
         sc = [it["subject_scores"][code] for it in items]
         pct = _mean(sc) / smax * 100 if smax else 0
         cut_n = sum(1 for it in items if code in it["fail_subjects"])
         subjects.append({
-            "code": code, "name": name, "mean": _r(_mean(sc)), "sd": _r(_sd(sc)), "max": max(sc), "min": min(sc),
+            "code": code, "name": name, "short": short, "max_score": smax, "mean": _r(_mean(sc)), "sd": _r(_sd(sc)), "max": max(sc), "min": min(sc),
             "correct_rate": _r(pct), "level": level(pct), "cut_n": cut_n, "cut_rate": _r(cut_n / n * 100),
         })
 
@@ -103,53 +106,59 @@ def compute(items, spq):
     for (t, key), g in sorted(groups.items(), key=lambda kv: (kv[0][0], -len(kv[1]))):
         seen[t] = seen.get(t, 0) + 1
         label = f"{t}형" + ("" if seen[t] == 1 else f" (정답 설정 {seen[t]})")
-        forms.append(_item_analysis(label, t, list(key), g))
+        forms.append(_item_analysis(label, t, list(key), g, exam))
 
     types = {it["exam_type"] for it in items}
+    f1, f2 = (exam["forms"] + [None, None])[:2]
     key_of = {}
-    for t in ("A", "B"):
+    for t in exam["forms"]:
         gs = [(len(g), k) for (tt, k), g in groups.items() if tt == t]
         if gs:
             key_of[t] = list(max(gs)[1])      # 인원이 가장 많은 정답 설정
     conflicts, blocks = [], []
-    if {"A", "B"} <= types and len(key_of) == 2:
-        conflicts = key_conflicts(key_of["A"], key_of["B"])
-        # 통합 문항 분석: A형·B형 응시자를 A형 번호 기준으로 합쳐서 분석 (같은 문제를 푼 사람이 늘어남)
+    paired = exam["form_rule"] == "half_swap" and f2 is not None
+    if paired and {f1, f2} <= types and len(key_of) == 2:
+        conflicts = exam_mod.key_conflicts(exam, key_of[f1], key_of[f2])
+        # 통합 문항 분석: 두 유형 응시자를 첫 번째 유형 번호 기준으로 합쳐서 분석 (같은 문제를 푼 사람이 늘어남)
         merged = []
         for it in items:
             sa = it["student_answers"]
-            if it["exam_type"] != "A":
-                sa = {str(q): sa.get(str(other_q(q)), "무표기") for q in range(1, 101)}
-            merged.append({**it, "student_answers": sa, "exam_type": "A", "_key": key_of["A"]})
-        m = _item_analysis("통합 (A형 번호 기준, A·B 합산)", "AB", key_of["A"], merged)
-        forms.insert(0, m)
-        # 블록 정답률: 같은 문제를 앞쪽(A형 기준 앞 블록)에서 풀었는지 뒤쪽에서 풀었는지의 차이
-        for s_i, (code, _) in enumerate(SUBJECTS):
-            for b_i, name in enumerate(("1~10번", "11~20번")):
-                qs = range(s_i * 20 + b_i * 10 + 1, s_i * 20 + b_i * 10 + 11)   # A형 번호 기준
+            if it["exam_type"] != f1:
+                sa = {str(q): sa.get(str(exam_mod.other_q(exam, q)), "무표기") for q in range(1, n_q + 1)}
+            merged.append({**it, "student_answers": sa, "exam_type": f1, "_key": key_of[f1]})
+        forms.insert(0, _item_analysis(f"통합 ({f1}형 번호 기준, {f1}·{f2} 합산)", f1 + f2, key_of[f1], merged, exam))
+        # 블록 정답률: 같은 문제를 앞쪽에서 풀었는지 뒤쪽에서 풀었는지의 차이 (과목의 앞 절반 / 뒤 절반)
+        for code, name, short, a0, b0 in subj:
+            n_s = b0 - a0 + 1
+            for b_i, blabel in enumerate((f"1~{n_s // 2}번", f"{n_s // 2 + 1}~{n_s}번")):
+                qs = range(a0 + b_i * (n_s // 2), a0 + (b_i + 1) * (n_s // 2))      # 첫 유형 번호 기준
                 rate = {}
-                for t in ("A", "B"):
+                for t in (f1, f2):
                     g = [it for it in items if it["exam_type"] == t]
                     tot = hit = 0
                     for it in g:
                         for q in qs:
-                            qq = q if t == "A" else other_q(q)
+                            qq = q if t == f1 else exam_mod.other_q(exam, q)
                             tot += 1
                             hit += it["student_answers"].get(str(qq)) == str(it["_key"][qq - 1])
                     rate[t] = (hit / tot * 100) if tot else None
-                blocks.append({"subject": code, "subject_name": SUBJECT_NAME[code], "block": name,
-                               "n_a": sum(1 for it in items if it["exam_type"] == "A"),
-                               "n_b": sum(1 for it in items if it["exam_type"] == "B"),
-                               "a_rate": _r(rate["A"]), "b_rate": _r(rate["B"]),
-                               "diff": _r(rate["B"] - rate["A"]) if None not in rate.values() else None})
+                blocks.append({"subject": code, "subject_name": name, "block": blabel,
+                               "n_a": sum(1 for it in items if it["exam_type"] == f1),
+                               "n_b": sum(1 for it in items if it["exam_type"] == f2),
+                               "a_rate": _r(rate[f1]), "b_rate": _r(rate[f2]),
+                               "diff": _r(rate[f2] - rate[f1]) if None not in rate.values() else None,
+                               "form_a": f1, "form_b": f2})
 
-    return {"n": n, "summary": summary, "distribution": distribution, "subjects": subjects,
+    return {"n": n, "summary": summary, "distribution": distribution, "avg_full": round(avg_full, 2), "subjects": subjects,
             "forms_summary": forms_summary, "forms": forms, "min_n_item": MIN_N_ITEM,
-            "key_conflicts": conflicts, "blocks": blocks,
+            "key_conflicts": conflicts, "blocks": blocks, "paired": paired, "forms_list": exam["forms"],
             "legacy_n": sum(1 for it in items if it.get("_legacy"))}
 
 
-def _item_analysis(label, form, key, g):
+def _item_analysis(label, form, key, g, exam):
+    n_q = exam_mod.total_questions(exam)
+    chs = [str(c) for c in range(1, exam["choices"] + 1)]
+    subj = exam_mod.subject_ranges(exam)
     n = len(g)
     ordered = sorted(g, key=lambda x: -x["total_score"])
     k = max(1, round(0.27 * n))
@@ -157,22 +166,22 @@ def _item_analysis(label, form, key, g):
     enough = n >= MIN_N_ITEM
     rows = []
     corrects = []   # 문항별 정답 여부 행렬 (KR-20 용)
-    for q in range(1, 101):
+    for q in range(1, n_q + 1):
         ans = [x["student_answers"].get(str(q), "무표기") for x in g]
-        cnt = {c: ans.count(c) for c in ("1", "2", "3", "4", "5", "무표기", "이중")}
+        cnt = {c: ans.count(c) for c in chs + ["무표기", "이중"]}
         right = str(key[q - 1])
         p = cnt[right] / n
         corrects.append(p)
         pu = sum(1 for x in upper if x["student_answers"].get(str(q)) == right) / len(upper)
         pl = sum(1 for x in lower if x["student_answers"].get(str(q)) == right) / len(lower)
         d = (pu - pl) if enough else None
-        wrong_best = max((c for c in ("1", "2", "3", "4", "5") if c != right), key=lambda c: cnt[c])
+        wrong_best = max((c for c in chs if c != right), key=lambda c: cnt[c])
         flags = []
         if enough:
             # 정답키/문항 오류 의심: 실력 상위 27% 집단에서도 특정 오답이 정답보다 많고(40% 이상) 선택됨
             # (전체 비율만 보면 어려운 문항에서 우연히 걸리므로, 정답을 알 만한 상위 집단 기준으로 판단)
-            cu = {c: sum(1 for x in upper if x["student_answers"].get(str(q)) == c) for c in "12345"}
-            wu = max((c for c in "12345" if c != right), key=lambda c: cu[c])
+            cu = {c: sum(1 for x in upper if x["student_answers"].get(str(q)) == c) for c in chs}
+            wu = max((c for c in chs if c != right), key=lambda c: cu[c])
             if cu[wu] > cu[right] and cu[wu] / len(upper) >= 0.4:
                 flags.append("key")
             if p < 0.3:
@@ -187,8 +196,8 @@ def _item_analysis(label, form, key, g):
         if (cnt["무표기"] + cnt["이중"]) / n >= 0.1 and enough:
             flags.append("marking")
         rows.append({
-            "q": q, "alt_q": other_q(q), "subject": SUBJECTS[(q - 1) // 20][0],
-            "subject_name": SUBJECTS[(q - 1) // 20][1], "answer": int(right),
+            "q": q, "alt_q": exam_mod.other_q(exam, q), "subject": subj[exam_mod.subject_index(exam, q)][0],
+            "subject_name": subj[exam_mod.subject_index(exam, q)][1], "answer": int(right),
             "correct_rate": _r(p * 100), "wrong_rate": _r((1 - p) * 100),
             "choices": {c: _r(cnt[c] / n * 100) for c in cnt},
             "top_wrong": int(wrong_best), "top_wrong_rate": _r(cnt[wrong_best] / n * 100),
@@ -197,9 +206,9 @@ def _item_analysis(label, form, key, g):
     # KR-20 신뢰도 (문항이 모두 정오 채점일 때의 내적 일관성)
     kr20 = None
     if enough:
-        totals = [sum(1 for q in range(1, 101) if x["student_answers"].get(str(q)) == str(key[q - 1])) for x in g]
+        totals = [sum(1 for q in range(1, n_q + 1) if x["student_answers"].get(str(q)) == str(key[q - 1])) for x in g]
         var = _sd(totals) ** 2
         if var > 0:
             sum_pq = sum(p * (1 - p) for p in corrects)
-            kr20 = _r(100 / 99 * (1 - sum_pq / var), 2)
+            kr20 = _r(n_q / (n_q - 1) * (1 - sum_pq / var), 2) if n_q > 1 else None
     return {"label": label, "form": form, "n": n, "enough": enough, "kr20": kr20, "items": rows}

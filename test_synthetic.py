@@ -20,6 +20,26 @@ def make_sheet(exam_type, sid, answers, blanks=(), doubles=()):
         if q in doubles: mark(xs[s*5 + answers[q-1] % 5], ys[row])
     return img
 
+def make_sheet_exam(exam, form, sid, answers, blanks=(), doubles=()):
+    """시험 설정(exam)에 맞춘 가상 답안지. answers: 문항 1..N 의 선택(1~선택지 수)."""
+    w, h = C['canonical_size']
+    img = np.full((h, w, 3), 255, np.uint8)
+    ax, ay, aw, ah = C['regions']['answer_box']; cv2.rectangle(img, (ax, ay), (ax+aw, ay+ah), (0,0,0), 3)
+    ix, iy, iw, ih = C['regions']['id_box']; cv2.rectangle(img, (ix, iy), (ix+iw, iy+ih), (0,0,0), 3)
+    r = C['bubble_radius']
+    def mark(x, y): cv2.circle(img, (int(x), int(y)), r-2, (0,0,0), -1)
+    if len(exam['forms']) > 1:
+        mark(*C['type_bubbles'][form])
+    for i, ch in enumerate(sid): mark(C['id_grid']['x_cols'][i], C['id_grid']['y_rows'][int(ch)])
+    xs, ys = C['answer_grid']['x_cols'], C['answer_grid']['y_rows']
+    for q in range(1, len(answers) + 1):
+        block, row = divmod(q - 1, len(ys))
+        if q in blanks: continue
+        mark(xs[block*5 + answers[q-1] - 1], ys[row])
+        if q in doubles: mark(xs[block*5 + answers[q-1] % exam['choices']], ys[row])
+    return img
+
+
 if __name__ == '__main__':
     random.seed(1)
     os.environ['OMR_DATA_DIR'] = tempfile.mkdtemp()
