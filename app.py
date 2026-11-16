@@ -1059,12 +1059,12 @@ def delete_formmap():
 
 @app.route("/api/formmap/template", methods=["GET"])
 def formmap_template():
-    """대응표 엑셀(현재 대응표, 없으면 같은 번호). 열: A형 번호, B형 번호, 선택지 대응(A형 1~n번 선택지가 B형 몇 번인지, 쉼표)."""
+    """대응표 엑셀(현재 대응표, 없으면 같은 번호). 열: A형 번호, B형 번호, 보기 순서(A형 1~n번 보기가 B형 몇 번인지, 쉼표)."""
     with lock:
         ex = state["exam"]
         pairs = ex.get("form_map") or [[q, q, list(range(1, ex["choices"] + 1))] for q in range(1, exam_mod.total_questions(ex) + 1)]
         a, b = ex["forms"][0], ex["forms"][1] if len(ex["forms"]) > 1 else "B"
-        df = pd.DataFrame([{f"{a}형 번호": x[0], f"{b}형 번호": x[1], "선택지 대응(선택)": ",".join(map(str, x[2]))} for x in pairs])
+        df = pd.DataFrame([{f"{a}형 번호": x[0], f"{b}형 번호": x[1], "보기 순서(선택)": ",".join(map(str, x[2]))} for x in pairs])
     out = io.BytesIO()
     df.to_excel(out, index=False, sheet_name="문제대응표")
     out.seek(0)

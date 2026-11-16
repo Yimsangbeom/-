@@ -259,7 +259,7 @@
     <div class="flex flex-col h-full">
       <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50"><div><b>A형/B형 대응 문제 확인</b><div id="fm-sum" class="text-xs text-slate-500"></div></div><button onclick="document.getElementById('fm-dlg').close()" class="text-slate-500 hover:text-slate-800 font-bold px-3 py-1">닫기</button></div>
       <div class="px-5 py-2 border-b text-sm flex flex-wrap items-center gap-4"><label class="flex items-center gap-2"><input type="checkbox" id="fm-only" onchange="renderFormMap()"> 확인이 필요한 문제만 (유사도 낮음/B형 번호 중복/선택지 순서 다름)</label><span id="fm-msg" class="text-xs"></span></div>
-      <div class="flex-1 overflow-auto px-5 py-2"><table class="w-full text-xs border-collapse"><thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border w-14">A형</th><th class="p-2 border">A형 문제</th><th class="p-2 border w-24">대응 B형</th><th class="p-2 border">B형 문제</th><th class="p-2 border w-16">유사도</th><th class="p-2 border w-40">선택지 대응 (A 1~n번 → B 번호)</th></tr></thead><tbody id="fm-tbody"></tbody></table></div>
+      <div class="flex-1 overflow-auto px-5 py-2"><table class="w-full text-xs border-collapse"><thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border w-14">A형</th><th class="p-2 border">A형 문제</th><th class="p-2 border w-24">대응 B형</th><th class="p-2 border">B형 문제</th><th class="p-2 border w-16">유사도</th><th class="p-2 border w-40" title="A형 ①~⑤번 보기가 B형에서 몇 번 보기인지 (같으면 1,2,3,4,5)">보기 순서</th></tr></thead><tbody id="fm-tbody"></tbody></table></div>
       <div class="px-5 py-3 border-t bg-slate-50 flex items-center gap-2"><span class="text-xs text-slate-500 flex-1">저장하면 A형 정답이 등록돼 있는 경우 B형 정답이 이 대응으로 다시 만들어지고(자동 생성된 경우), 통계의 A·B 합산 분석이 이 대응을 사용합니다. 이미 채점된 결과는 바뀌지 않습니다.</span><button onclick="saveFormMap()" id="fm-save" class="px-5 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm">대응표 저장</button></div>
     </div>
   </dialog>
@@ -764,7 +764,7 @@
       });
       document.getElementById('fm-tbody').innerHTML = rows || '<tr><td colspan="6" class="p-4 text-center text-slate-400">표시할 문제가 없습니다.</td></tr>';
       const m = document.getElementById('fm-msg'), save = document.getElementById('fm-save');
-      m.innerHTML = bad ? `<span class="text-red-600 font-bold">B형 번호가 겹치거나 선택지 대응이 잘못된 문제 ${bad}개를 고쳐야 저장할 수 있습니다.</span>` : '<span class="text-emerald-700 font-bold">모든 문제가 한 번씩 대응되었습니다.</span>';
+      m.innerHTML = bad ? `<span class="text-red-600 font-bold">B형 번호가 겹치거나 보기 순서가 잘못된 문제 ${bad}개를 고쳐야 저장할 수 있습니다.</span>` : '<span class="text-emerald-700 font-bold">모든 문제가 한 번씩 대응되었습니다.</span>';
       save.disabled = bad > 0; save.classList.toggle('opacity-50', bad > 0);
     }
     function setFmB(a, b) { fm.pairs.find(p => p.a === a).b = b; fm.pairs.find(p => p.a === a).score = null; renderFormMap(); }
