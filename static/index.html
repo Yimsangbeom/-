@@ -300,10 +300,9 @@
       const n = r.end - r.start + 1; return r.start + ((q - r.start) + n / 2) % n;
     };
     function renderKeySummary() {
-      const box = document.getElementById('key-summary'), conf = currentConfig.key_conflicts || [], e = EX(), n = EI().total_questions;
+      const box = document.getElementById('key-summary'), conf = [], e = EX(), n = EI().total_questions;
       const paired = e.form_rule === 'half_swap' && e.forms.length === 2, confB = conf.map(otherQ);
-      let html = conf.length ? `<div class="mb-2 p-2 rounded bg-red-50 text-red-700 text-xs font-sans">${e.forms[0]}형과 ${e.forms[1]}형 정답이 서로 맞지 않는 문항이 ${conf.length}개 있습니다. (${e.forms[0]}형 번호 ${conf.slice(0, 12).join(', ')}${conf.length > 12 ? ' ...' : ''}) 정답을 확인하세요.</div>` : '';
-      if (paired) html += `<div class="mb-2 text-xs text-slate-500 font-sans">${e.forms[0]}형 n번은 ${e.forms[1]}형 (n±과목 문항 수/2)번과 같은 문제입니다 (과목마다 앞 절반/뒤 절반 블록 교체). 한쪽 정답만 등록하면 다른 쪽은 자동 생성됩니다.</div>`;
+      let html = '';
       html += '<div class="grid grid-cols-5 gap-2">';
       for (let i = 0; i < n; i++) {
         const q = i + 1, cells = e.forms.map((f, k) => {
@@ -315,10 +314,7 @@
       box.innerHTML = html + '</div>';
       renderMasterSlots();
     }
-    function conflictText(c) {
-      const f = EX().forms;
-      return c && c.length ? `\n\n주의: ${f[0]}형과 ${f[1]}형 정답이 서로 맞지 않는 문항이 ${c.length}개 있습니다. (${f[0]}형 번호: ${c.slice(0, 15).join(', ')}${c.length > 15 ? ' ...' : ''})\n같은 문제가 맞는지(과목별 앞/뒤 절반 교체) 정답을 다시 확인하세요.` : '';
-    }
+    function conflictText() { return ''; }      // 유형 간 정답 대조 경고는 화면에 표시하지 않는다(내부 정보)
     async function saveConfig(keys) {
       currentConfig.score_per_q = parseFloat(document.getElementById('cfg-score').value);
       currentConfig.pass_average = parseFloat(document.getElementById('cfg-passavg').value);
@@ -403,10 +399,10 @@
       catch (err) { data = { status: 'error', message: String(err) }; }
       finally { busy(false); }
       if (data.status === 'success') {
-        alert(data.exam_type + '형 정답 답안지가 등록되었습니다!' + (data.derived_other ? '\n다른 유형(' + (data.exam_type === 'A' ? 'B' : 'A') + '형) 정답은 블록 교체 규칙으로 자동 생성했습니다.' : '') + (data.problems.length ? '\n무표기/이중마킹 문항(1번으로 임시 설정됨): ' + data.problems.join(', ') : '') + conflictText(data.conflicts));
+        await notify(data.exam_type + '형 정답 답안지가 등록되었습니다!'  + (data.problems.length ? '\n무표기/이중마킹 문항(1번으로 임시 설정됨): ' + data.problems.join(', ') : '') + conflictText(data.conflicts));
         loadConfig();
       } else {
-        alert('오류: ' + data.message);
+        await notify('오류: ' + data.message);
       }
     }
 
@@ -438,8 +434,7 @@
       }
       busy(true, '결과를 정리하는 중...', 100, '');
       await refreshResults();
-      busy(false);
-      alert(done + '장 채점 완료' + (errors.length ? '\n\n오류 ' + errors.length + '건:\n' + errors.slice(0, 10).join('\n') : ''));
+      await notify(done + '장 채점 완료' + (errors.length ? '\n\n오류 ' + errors.length + '건:\n' + errors.slice(0, 10).join('\n') : ''));
     }
 
     function judgeBadge(item) {
@@ -451,6 +446,12 @@
       const v = item.verify ? `<div class="text-[10px] text-violet-600">정답기록 대비 인식 ${item.verify.match}/${item.verify.total} 일치</div>` : '';
       const pg = (String(item.filename).match(/\[P\.\d+\]/) || [''])[0];
       return `<span title="${esc(item.filename)}">${esc(item.exam_title || item.filename)}</span>` + (pg ? ` <span class="text-xs text-slate-400">${pg}</span>` : '') + v;
+    }
+    function typeCell(item) {
+      const bad = item.type_status && item.type_status !== '정상';
+      if (!bad) return esc(item.exam_type);
+      const from = item.marked_type ? `표시 ${esc(item.marked_type)}` : '표시 없음';
+      return `<span title="${esc(item.type_note || '')}" class="cursor-help">${esc(item.exam_type)}<span class="block text-[11px] text-red-600 font-bold whitespace-nowrap">유형확인 (${from})</span></span>`;
     }
     function personCell(item) {
       const label = item.name ? `<span class="font-bold">${esc(item.name)}</span>`
@@ -470,6 +471,7 @@
       document.getElementById('print-sub').innerText = `출력일시 ${now.toLocaleString('ko-KR')} | 응시자 ${list.length}명 | 과락 ${currentConfig.subject_fail_cutoff}점 미만, 합격 평균 ${currentConfig.pass_average}점 이상`;
       window.print();
     }
+    async function notify(msg) { busy(false); await new Promise(r => setTimeout(r, 80)); alert(msg); }
     function busy(on, title, pct, text) {
       document.getElementById('busy').classList.toggle('hidden', !on);
       if (!on) return;
@@ -524,7 +526,7 @@
         const dup = dupCount[item.student_id] > 1 && !item.is_test ? ' <span class="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-bold whitespace-nowrap" title="같은 수험번호가 여러 번 올라왔습니다">중복</span>' : '';
         html1 += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
           <td class="p-2" onclick="event.stopPropagation()"><input type="checkbox" ${selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSel(${item.id}, this.checked)"></td>
-          <td class="p-2">${i+1}</td><td class="p-2 text-left min-w-[150px] break-words">${esc(item.filename)}</td><td class="p-2">${item.exam_type}</td>
+          <td class="p-2">${i+1}</td><td class="p-2 text-left min-w-[150px] break-words">${esc(item.filename)}</td><td class="p-2">${typeCell(item)}</td>
           <td class="p-2 font-mono whitespace-nowrap">${esc(item.student_id)}${dup}</td><td class="p-2 font-bold">${item.total_score}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });
       tbody.innerHTML = html1;
@@ -543,7 +545,7 @@
       list.forEach((item, i) => {
         const badge = (item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>') + `${(item.multi_count || item.blank_count) ? ` <span class="text-xs text-slate-500 whitespace-nowrap">이중 ${item.multi_count} · 무표기 ${item.blank_count}</span>` : ''}`;
         html2 += `<tr class="border-b">
-          <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2">${personCell(item)}</td>
+          <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${typeCell(item)}</td><td class="p-2 font-mono">${esc(item.student_id)}</td><td class="p-2">${personCell(item)}</td>
           ${codesOf().map(c => subCell(item, c)).join('')}
           <td class="p-2 font-bold text-blue-700">${item.total_score}</td><td class="p-2">${item.average.toFixed(1)}</td><td class="p-2">${judgeBadge(item)}</td><td class="p-2">${badge}</td></tr>`;
       });

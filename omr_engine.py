@@ -217,7 +217,7 @@ class OMREngine:
             out = sorted(set(out) | {i for i, v in enumerate(ratios) if v[1] >= ith and v[1] >= base_inner[i] + 0.22 and v[1] >= row_min + 0.2})
         return out
 
-    def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0, exam=None):
+    def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0, exam=None, infer_forms=None):
         """exam: 시험 설정(exam.py). 없으면 기본 시험(5과목x20문항, 선택지 5, 수험번호 9자리, A/B형)."""
         import exam as exam_mod
         exam = exam or exam_mod.default_exam()
@@ -266,21 +266,45 @@ class OMREngine:
         student_id = ''.join(student_id_chars)
 
         n_q, n_ch = exam_mod.total_questions(exam), exam['choices']
-        ans_key = answer_key_dict.get(exam_type, answer_key_dict.get(forms[0], [1] * n_q))
         if n_q > len(self.qpos):
             raise ValueError(f"시험 문항 수({n_q})가 답안지 양식 용량({len(self.qpos)})을 넘습니다.")
         codes = exam_mod.codes(exam)
-        student_answers, subject_scores = {}, {c: 0.0 for c in codes}
-        multi_count, blank_count, correct_count = 0, 0, 0
 
+        # 1단계: 문항별 마킹 읽기
         all_rows = [self.scores(binary, self.qpos[i][:n_ch], r) for i in range(n_q)]
         q_base = self.baselines(all_rows) if n_q >= 10 else None
+        marked_all = [[(c_i + 1, self.qpos[q][c_i][0], self.qpos[q][c_i][1]) for c_i in self.pick_marked(all_rows[q], th, q_base)] for q in range(n_q)]
+
+        # 2단계: 문제 유형 확인. 수험생이 유형(A/B)을 잘못 표시했을 수 있으므로, 등록된 모든 유형의 정답으로 맞힌 개수를 비교해
+        # 표시한 유형보다 다른 유형이 뚜렷하게(10문항 이상) 더 많이 맞으면 그 유형으로 채점하고 결과에 표시한다.
+        marked_type = exam_type if (type_status == '정상' and len(forms) > 1) else None
+        type_note, fit = '', None
+        usable = [f for f in (infer_forms or []) if f in forms and f in answer_key_dict]
+        if len(forms) > 1 and len(usable) >= 2:
+            fit = {f: sum(1 for q, m in enumerate(marked_all) if len(m) == 1 and q < len(answer_key_dict[f]) and m[0][0] == int(answer_key_dict[f][q])) for f in usable}
+            best = max(usable, key=lambda f: (fit[f], f == exam_type))
+            fits = ', '.join(f"{f}형 {fit[f]}개" for f in usable)
+            if type_status != '정상':
+                if fit[best] > 0:
+                    exam_type = best
+                type_note = f"문제 유형 표시를 읽지 못해(표시 없음/중복) 답안이 더 많이 맞는 {exam_type}형으로 채점했습니다. (맞힌 개수: {fits})"
+            elif exam_type in fit and best != exam_type and fit[best] - fit[exam_type] >= 10:
+                type_status = '유형불일치'
+                type_note = f"수험생이 {exam_type}형으로 표시했지만 답안은 {best}형 정답과 더 일치하여 {best}형으로 채점했습니다. (맞힌 개수: {fits})"
+                exam_type = best
+        if len(forms) > 1 and type_status != '정상' and exam_type in self.cfg['type_bubbles']:
+            tx, ty = self.cfg['type_bubbles'][exam_type]
+            cv2.circle(vis_img, (int(tx), int(ty)), r + 7, (0, 140, 255), 3)
+        ans_key = answer_key_dict.get(exam_type, answer_key_dict.get(forms[0], [1] * n_q))
+
+        # 3단계: 확정된 유형의 정답으로 채점
+        student_answers, subject_scores = {}, {c: 0.0 for c in codes}
+        multi_count, blank_count, correct_count = 0, 0, 0
         for q_num in range(1, n_q + 1):
             centers = self.qpos[q_num - 1][:n_ch]
             code = codes[exam_mod.subject_index(exam, q_num)]
             correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
-            row_ratios = all_rows[q_num - 1]
-            marked = [(c_i + 1, centers[c_i][0], centers[c_i][1]) for c_i in self.pick_marked(row_ratios, th, q_base)]
+            marked = marked_all[q_num - 1]
             if len(marked) == 1:
                 chosen, m_cx, m_cy = marked[0]
                 student_answers[q_num] = str(chosen)
@@ -312,7 +336,7 @@ class OMREngine:
         total_score = sum(subject_scores.values())
         needs_review = (type_status != '정상') or (id_warnings > 0) or (multi_count > 0) or (blank_count > 0)
         return {
-            'exam_type': exam_type, 'type_status': type_status, 'student_id': student_id, 'student_answers': student_answers,
+            'exam_type': exam_type, 'marked_type': marked_type, 'type_status': type_status, 'type_note': type_note, 'type_fit': fit, 'student_id': student_id, 'student_answers': student_answers,
             'subject_scores': subject_scores, 'total_score': total_score, 'correct_count': correct_count,
             'multi_count': multi_count, 'blank_count': blank_count, 'needs_review': needs_review, 'vis_img': vis_img, 'name_img': name_img
         }

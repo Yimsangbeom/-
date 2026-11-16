@@ -50,12 +50,17 @@ def snapshot():
         return copy.deepcopy(state["exam"]), {k: list(v) for k, v in state["answer_keys"].items()}, float(state["threshold"])
 
 
-def grade_image(img_bgr, ex, keys, threshold):
-    """이미지 한 장 판독. 전체 잠금(lock) 밖에서 실행하고, 판독끼리만 grade_lock 으로 직렬화한다."""
+def grade_image(img_bgr, ex, keys, threshold, infer=True):
+    """이미지 한 장 판독. 전체 잠금(lock) 밖에서 실행하고, 판독끼리만 grade_lock 으로 직렬화한다.
+    infer=True: 등록된 정답이 2개 이상이면 수험생이 표시한 유형이 맞는지 정답과 대조해 확인한다."""
+    forms = None
+    if infer:
+        with lock:
+            forms = [f for f in ex["forms"] if state["keys_set"].get(f)]
     with grade_lock:
         eng = get_engine(ex["layout"])
         eng.fill_threshold = threshold
-        return eng.grade_sheet(img_bgr, keys, 1.0, exam=ex)
+        return eng.grade_sheet(img_bgr, keys, 1.0, exam=ex, infer_forms=forms)
 
 
 def current_engine():
@@ -251,6 +256,9 @@ def make_result(res, page_label, is_test=False, verify=None, keys=None):
         "name_url": name_url,
         "name": "",
         "exam_type": res["exam_type"],
+        "marked_type": res.get("marked_type"),
+        "type_status": res.get("type_status", "정상"),
+        "type_note": res.get("type_note", ""),
         "student_id": res["student_id"],
         "subject_correct": {c: int(round(v)) for c, v in res["subject_scores"].items()},  # 맞힌 개수(배점 1점 기준)
         "correct_count": res["correct_count"],
@@ -337,7 +345,7 @@ def grade_master():
             return jsonify({"status": "error", "message": "이미지를 읽을 수 없습니다."}), 400
         _, img_bgr = pages[0]
         ex, keys, thr = snapshot()
-        res = grade_image(img_bgr, ex, keys, thr)
+        res = grade_image(img_bgr, ex, keys, thr, infer=False)
         slot = request.form.get("form", "").strip()          # 화면에서 'A형 칸/B형 칸' 중 어디에 올렸는지
         if slot and slot not in ex["forms"]:
             return jsonify({"status": "error", "message": f"이 시험에 없는 문제 유형입니다: {slot}"}), 400
@@ -555,7 +563,7 @@ def test_run():
     graded = []
     for fn in meta["run_files"]:
         for label, img in load_pages_from_file(os.path.join(SAMPLE_DIR, fn)):
-            graded.append((label, grade_image(img, ex, meta["keys"], thr)))      # 판독은 전체 잠금 밖에서
+            graded.append((label, grade_image(img, ex, meta["keys"], thr, infer=False)))      # 판독은 전체 잠금 밖에서
     with lock:
         for label, res in graded:
             exp = meta["students"].get(res["student_id"])
