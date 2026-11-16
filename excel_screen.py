@@ -116,7 +116,37 @@ def add_screen_sheet(wb, exam, st, st_scope, tmax, pass_average, cut, images, fi
         r = section(f'블록 정답률 비교 (같은 문제를 앞/뒤에서 풀었을 때, {b0["form_a"]}형 번호 기준)', r)
         r = table(["과목", "번호", f'{b0["form_a"]}형 응시자 정답률', f'{b0["form_b"]}형 응시자 정답률', "차이 (%p)"], [5, 3, 3, 3, 4],
                   [(b["subject_name"], b["block"], f'{b["a_rate"]}%', f'{b["b_rate"]}%', b["diff"]) for b in st["blocks"]], r)
-    put(r, 1, "문항 분석(문항별 정답률, 선택지 비율, 변별도, 정답키 확인)은 '문항분석_*' 시트에 있습니다. 변별도: 상위 27% 정답률 - 하위 27% 정답률 (0.3 이상 좋음, 0.2 미만 '변별도 낮음', 음수는 '역변별' = 점수 낮은 응시자가 더 많이 맞힌 문항). KR-20: 0.8 이상 양호.",
+    # ---- 문항 분석 (화면의 표와 같은 열/색: 정답 선택지 초록, 25% 이상 선택된 오답 빨강, 검토 문항 연한 노랑)
+    from excel_export import FLAG_TEXT
+    nch = len(st["forms"][0]["items"][0]["choices"]) - 2 if st.get("forms") and st["forms"][0]["items"] else 5
+    spans = [1, 1, 3, 1, 1, 1] + [1] * nch + [1, 1, 1]
+    spans.append(max(2, NC - sum(spans)))
+    header = ["문항", "대응 번호", "과목", "정답", "정답률", "오답률"] + [f"{c}번" for c in range(1, nch + 1)] + ["무표기", "이중", "변별도", "검토"]
+    for fm in st.get("forms", []):
+        r = section(f'문항 분석 - {fm["label"]} ({fm["n"]}명)' + ("" if fm["enough"] else f' · 응시자 {st.get("min_n_item", 10)}명 미만이라 변별도·검토 표시 보류(참고용)'), r)
+        c = 1
+        for h, sp in zip(header, spans):
+            put(r, c, h, sp, True, 10, "334155", "F1F5F9")
+            c += sp
+        r += 1
+        for it in fm["items"]:
+            flagged = bool(it["flags"])
+            vals = [it["q"], it["alt_q"], it["subject_name"], it["answer"], f'{it["correct_rate"]}%', f'{it["wrong_rate"]}%']
+            vals += [it["choices"][str(k)] for k in range(1, nch + 1)] + [it["choices"]["무표기"], it["choices"]["이중"], "-" if it["disc"] is None else it["disc"], ", ".join(FLAG_TEXT[x] for x in it["flags"])]
+            c = 1
+            for k, (v, sp) in enumerate(zip(vals, spans)):
+                fill, color, bold = ("FFFBEB" if flagged else None), "1E293B", k in (0, 4)
+                if 6 <= k < 6 + nch:
+                    val = it["choices"][str(k - 5)]
+                    if str(it["answer"]) == str(k - 5):
+                        fill, color, bold = "ECFDF5", "047857", True
+                    elif val >= 25:
+                        fill, color, bold = "FEF2F2", "B91C1C", True
+                put(r, c, v, sp, bold, 10, color, fill, "left" if k in (2, len(vals) - 1) else "center")
+                c += sp
+            r += 1
+        r += 1
+    put(r, 1, "문항 분석은 위 표와 '문항분석_*' 시트(필터로 과목별 보기 가능)에 있습니다. 변별도: 상위 27% 정답률 - 하위 27% 정답률 (0.3 이상 좋음, 0.2 미만 '변별도 낮음', 음수는 '역변별' = 점수 낮은 응시자가 더 많이 맞힌 문항). KR-20: 0.8 이상 양호.",
         NC, False, 9, "64748B", align="left", border=False)
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1

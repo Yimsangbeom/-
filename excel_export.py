@@ -226,6 +226,10 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 name, k = f"{base}{k}", k + 1
             used.add(name)
             pd.DataFrame(row).to_excel(w, sheet_name=name[:31], index=False)
+            wsi = w.sheets[name[:31]]
+            wsi.freeze_panes = "A2"                       # 머리글 고정 + 필터(과목 등으로 걸러 보기)
+            wsi.auto_filter.ref = wsi.dimensions
+            wsi.column_dimensions["C"].width = 30
         import excel_screen
         excel_screen.add_screen_sheet(w.book, exam, st, st_scope, tmax, pass_average, subject_fail_cutoff, images or [], first=(part == "stats"))
     out.seek(0)

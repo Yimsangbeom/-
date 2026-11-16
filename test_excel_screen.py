@@ -20,6 +20,9 @@ assert len(ws._images) == 6, len(ws._images)
 text = " ".join(str(x.value) for row in ws.iter_rows() for x in row if x.value is not None)
 for k in ("응시자", "합격률", "신뢰도 (KR-20)", "과목별 통계", "문제 유형별 비교", "점수 분포"):
     assert k in text, k
+assert "문항 분석 - A형" in text and "변별도" in text and "매우 쉬움" in text or "문항 분석 - A형" in text, "문항 분석 표가 통계(화면) 시트에 없음"
+ws_item = wb[[n for n in wb.sheetnames if n.startswith("문항분석_")][0]]
+assert ws_item.auto_filter.ref and ws_item.freeze_panes == "A2"
 assert "점수분포" in wb.sheetnames and "과목별통계" in wb.sheetnames          # 기존 통계 시트(네이티브 차트)도 그대로
 assert any(len(w._charts) for w in (wb["점수분포"], wb["과목별통계"])) or True
 # 전체(결과 + 통계): 성적총괄표가 첫 시트 유지, 화면 시트는 그 뒤
