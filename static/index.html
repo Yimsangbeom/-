@@ -581,11 +581,11 @@
     function personCell(item, small) {
       const label = (item.name && item.name_src !== '명단') ? `<span class="font-bold">${esc(item.name)}</span>`
         : (item.name_url ? `<img src="${item.name_url}" class="${small ? 'h-6 max-w-[76px]' : 'h-8 max-w-[150px]'} object-contain inline-block border rounded bg-white" alt="이름 칸">` : '<span class="text-slate-400">-</span>');
-      return `<span class="cursor-pointer" title="이름 칸 사진입니다. 클릭하여 이름을 입력하세요" onclick="editName(${item.id})">${label}</span>`;
+      return `<span class="cursor-pointer" title="클릭하여 이름을 입력하세요 (입력한 이름을 지우면 사진으로 되돌아갑니다)" onclick="editName(${item.id})">${label}</span>`;
     }
     async function editName(id) {
       const it = gradedList.find(x => x.id === id); if (!it) return;
-      const v = prompt('이름을 입력하세요 (이름 칸 손글씨는 자동 인식이 안 되어 사진을 보고 입력합니다)', it.name || '');
+      const v = prompt('이름을 입력하세요 (이름 칸 손글씨는 자동 인식이 안 되어 사진을 보고 입력합니다)\n입력한 이름을 지우고 확인을 누르면 이름 사진으로 되돌아갑니다.', it.name || '');
       if (v === null) return;
       const r = await (await fetch('/api/results/' + id + '/name', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: v }) })).json();
       if (r.status === 'success') { it.name = r.name; refreshResults(); }
