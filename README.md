@@ -76,3 +76,12 @@
 - 감시는 30초 간격으로 3번 연속 실패했을 때만 조치(대량 채점 중 일시 지연 오판 방지). 채점(이미지 판독)은 전체 잠금 밖에서 하므로 채점 중에도 결과/통계/상태 확인이 막히지 않음(`python test_concurrency.py`로 검증)
 - 로그 `data\server.log` 는 20MB 가 넘으면 `server.log.1` 로 보관
 - 업데이트 방법: `git pull` -> `Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | % { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }` (감독자가 새 코드로 자동 재시작)
+
+## 서버 운영 메모 (nginx / 포트) - 2026-11-16 장애 정리
+**장애 내용**: 80번 포트를 Windows 포트 포워딩 규칙(`netsh interface portproxy` 80 -> 127.0.0.1:5000, IP Helper 서비스가 선점)이 쥐고 있어 nginx 가 시작하지 못했고, 그 결과 lms/edu/chat 이 접속 불가였으며 http://lms 요청은 OCR 프로그램으로 전달됨. 규칙을 삭제해 해결.
+- 80번 포트에 `netsh interface portproxy` 를 **다시 만들지 말 것** (확인: `netsh interface portproxy show all` 이 비어 있어야 함)
+- nginx 는 Windows 서비스 `nginx`(NSSM, 자동 시작)로만 다룬다. 직접 `Start-Process nginx.exe` 로 띄우지 말 것 (Windows 에서는 같은 포트에 nginx 가 두 개 붙을 수 있어 reload 가 어느 쪽에 적용될지 불확실)
+- 설정 변경: `cd C:\nginx` -> `.\nginx.exe -t` 로 검사 -> 통과하면 reload. nginx 마스터가 SYSTEM 계정이라 reload 는 관리자 셸에서 직접 못 보내고, 일회성 SYSTEM 작업(`schtasks ... /ru SYSTEM` 으로 `nginx.exe -s reload` 실행 후 삭제)을 쓴다. 검사 실패 시 백업(`conf\nginx.conf.bak_*`)으로 복원
+- OCR 연결은 `conf\ocr.conf` (80: 인증서 갱신 경로 + https 이동, 443: 127.0.0.1:5000 프록시). `nginx.conf` 의 http 블록에 `include ocr.conf;` 한 줄로 포함
+- 확인 명령: `Get-CimInstance Win32_Process -Filter "Name='nginx.exe'"` 의 부모가 `nssm` 인 마스터/워커만 보여야 함. `netstat -ano | findstr LISTENING | findstr ":80 :443 "` 의 소유 PID 도 그 워커 하나
+- OCR 서버 상태: `http://127.0.0.1:5000/healthz` -> `{"status":"ok"}`
