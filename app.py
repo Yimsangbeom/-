@@ -417,6 +417,7 @@ def _grade_files(saved, ex, keys, thr, job=None):
                 res = grade_image(img_bgr, ex, keys, thr)
                 with lock:
                     item = make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys, src_img=img_bgr)
+                    apply_roster(item)
                     graded_results.append(item)
                     store.add_results([item])
                     new_results.append(item)
@@ -489,6 +490,7 @@ def _run_regrade(job, targets, ex, keys, thr):
                     cur = next((r for r in graded_results if r["id"] == old["id"]), None)
                     if cur is not None:
                         rescore_item(cur, cur["student_answers"], cur["exam_type"], cur["student_id"])
+                        apply_roster(cur)
                         store.update_result(cur)
                         n += 1
                 continue
@@ -501,6 +503,7 @@ def _run_regrade(job, targets, ex, keys, thr):
                     continue                                   # 그 사이에 삭제된 건
                 new = make_result(res, old["filename"], is_test=old.get("is_test", False), keys=keys, rid=old["id"], keep=old)
                 new["exam_id"] = old.get("exam_id", new["exam_id"])
+                apply_roster(new)
                 graded_results[:] = [new if r["id"] == old["id"] else r for r in graded_results]
                 store.update_result(new)
             n += 1
@@ -585,6 +588,10 @@ def correct_result(rid):
             rescore_item(r, ans, form, sid)
             r["name"] = str(data.get("name", r.get("name", ""))).strip()[:40]
             r.update({"corrected": True, "needs_review": False, "type_status": "정상", "type_note": ""})
+            for k in ("id_read", "id_candidates", "roster_flags", "name_src"):       # 사람이 확인한 값이므로 자동 처리 표시는 지운다
+                r.pop(k, None)
+            if not r["name"]:
+                apply_roster(r)
             store.update_result(r)
             return jsonify({"status": "success", "result": with_judge(r)})
     return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
@@ -613,6 +620,9 @@ def set_result_name(rid):
         for r in graded_results:
             if r["id"] == rid:
                 r["name"] = name
+                r.pop("name_src", None)
+                if not name:
+                    apply_roster(r)
                 store.update_result(r)
                 return jsonify({"status": "success", "name": name})
     return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
@@ -623,10 +633,145 @@ def by_student_id(items):
     return sorted(items, key=lambda x: ("?" in str(x.get("student_id", "")), str(x.get("student_id", "")), x["id"]))
 
 
+# ------------------------- 응시자 명단 (수험번호 -> 이름) -------------------------
+_roster_cache = {}
+
+
+def roster_of():
+    eid = registry["active"]
+    if eid not in _roster_cache:
+        _roster_cache[eid] = store.get_setting("roster:" + eid) or {}
+    return _roster_cache[eid]
+
+
+def apply_roster(item, ro=None):
+    """명단으로 이름을 채우고, 못 읽은 수험번호(?)를 복구하고, 명단에 없는 번호를 표시한다. (lock 안에서 호출)
+    사람이 직접 입력한 이름/수험번호는 덮어쓰지 않는다."""
+    ro = roster_of() if ro is None else ro
+    ents = ro.get("entries") or {}
+    if item.get("id_read"):                                   # 이전에 자동 복구한 번호는 되돌린 뒤 다시 계산
+        item["student_id"] = item.pop("id_read")
+    item.pop("id_candidates", None)
+    item.pop("roster_flags", None)
+    if item.get("name_src") == "명단":
+        item["name"] = ""
+        item.pop("name_src", None)
+    if not ents:
+        return
+    sid, flags, corrected = item["student_id"], [], bool(item.get("corrected"))
+    if "?" in sid and not corrected:
+        pat = re.compile(sid.replace("?", "."))
+        cands = [k for k in ents if len(k) == len(sid) and pat.fullmatch(k)]
+        if len(cands) == 1:
+            item["id_read"], item["student_id"], sid = sid, cands[0], cands[0]
+            flags.append("수험번호 자동 복구(확인 필요)")
+        elif 1 < len(cands) <= 8:
+            item["id_candidates"] = cands
+            flags.append(f"수험번호 후보 {len(cands)}명")
+        else:
+            flags.append("수험번호를 명단에서 찾지 못함")
+    if "?" not in sid:
+        if sid in ents:
+            if not item.get("name"):
+                item["name"], item["name_src"] = ents[sid], "명단"
+        elif not corrected:
+            flags.append("명단에 없는 수험번호")
+    if flags and not corrected:
+        item["roster_flags"] = flags
+
+
+def parse_roster(file_storage):
+    """엑셀(.xlsx)/CSV 에서 수험번호와 이름 열을 찾아 {수험번호: 이름} 으로 만든다."""
+    name = (file_storage.filename or "").lower()
+    raw = file_storage.read()
+    if name.endswith(".csv"):
+        for enc in ("utf-8-sig", "cp949"):
+            try:
+                df = pd.read_csv(io.BytesIO(raw), header=None, dtype=str, encoding=enc, keep_default_na=False)
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            raise ValueError("CSV 문자 인코딩을 읽을 수 없습니다. 엑셀(.xlsx)로 저장해서 올려 주세요.")
+    else:
+        df = pd.read_excel(io.BytesIO(raw), header=None, dtype=str).fillna("")
+    sid_keys, name_keys = ("수험번호", "응시번호", "수험 번호"), ("이름", "성명", "성 명", "응시자명", "응시자")
+    hdr = sid_col = name_col = None
+    for i in range(min(8, len(df))):
+        cells = [str(v).replace(" ", "") for v in df.iloc[i].tolist()]
+        sc = next((j for j, c in enumerate(cells) if any(k.replace(" ", "") in c for k in sid_keys)), None)
+        nc = next((j for j, c in enumerate(cells) if j != sc and any(c == k.replace(" ", "") or k.replace(" ", "") in c for k in name_keys)), None)
+        if sc is not None and nc is not None:
+            hdr, sid_col, name_col = i, sc, nc
+            break
+    if hdr is None:
+        raise ValueError("첫 줄에서 '수험번호'와 '이름'(또는 '성명') 열 제목을 찾지 못했습니다.")
+    entries, dups, skipped = {}, [], 0
+    for i in range(hdr + 1, len(df)):
+        sid = re.sub(r"\D", "", re.sub(r"\.0+$", "", str(df.iat[i, sid_col]).strip()))
+        nm = str(df.iat[i, name_col]).strip()
+        if not sid and not nm:
+            continue
+        if not (4 <= len(sid) <= 20) or not nm:
+            skipped += 1
+            continue
+        if sid in entries and entries[sid] != nm:
+            dups.append(sid)
+        entries[sid] = nm
+    if not entries:
+        raise ValueError("명단에서 읽을 수 있는 행이 없습니다. 수험번호(숫자)와 이름이 있는지 확인하세요.")
+    return entries, dups, skipped
+
+
+def roster_summary():
+    ro = roster_of()
+    ents = ro.get("entries") or {}
+    if not ents:
+        return {"registered": False}
+    real = [r for r in graded_results if not r.get("is_test")]
+    seen = {r["student_id"] for r in real}
+    absent = [{"id": k, "name": v} for k, v in sorted(ents.items()) if k not in seen]
+    unknown = sum(1 for r in real if "?" not in r["student_id"] and r["student_id"] not in ents)
+    return {"registered": True, "filename": ro.get("filename", ""), "count": len(ents), "updated": ro.get("updated", ""),
+            "graded": len(real), "absent": absent, "unknown": unknown, "duplicates": ro.get("duplicates", []), "skipped": ro.get("skipped", 0)}
+
+
+@app.route("/api/roster", methods=["GET", "POST", "DELETE"])
+def handle_roster():
+    global graded_results
+    with lock:
+        if request.method == "GET":
+            return jsonify(roster_summary())
+        eid = registry["active"]
+        if request.method == "DELETE":
+            store.delete_setting("roster:" + eid)
+            _roster_cache.pop(eid, None)
+            for r in graded_results:
+                apply_roster(r, {})
+                store.update_result(r)
+            return jsonify({"status": "success", **roster_summary()})
+        if "file" not in request.files:
+            return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
+        try:
+            entries, dups, skipped = parse_roster(request.files["file"])
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+        ro = {"entries": entries, "filename": display_name(request.files["file"]), "updated": time.strftime("%Y-%m-%d %H:%M"),
+              "duplicates": dups[:50], "skipped": skipped}
+        store.set_setting("roster:" + eid, ro)
+        _roster_cache[eid] = ro
+        for r in graded_results:                      # 이미 채점된 결과에도 바로 적용
+            apply_roster(r, ro)
+            store.update_result(r)
+        return jsonify({"status": "success", **roster_summary()})
+
+
 def with_judge(item):
     sc = scaled(item)
     status, fails = judge(sc)
     sc = {k: v for k, v in sc.items() if k != "orig"}       # 원래 판독값 백업은 화면/통계로 내보내지 않는다
+    if sc.get("roster_flags") and not sc.get("corrected"):
+        sc["needs_review"] = True
     return {**sc, "exam_title": state["exam"].get("title") or state["exam"]["name"], "average": round(sc["total_score"] / exam_mod.n_subjects(state["exam"]), 1), "result": status, "fail_subjects": fails}
 
 
@@ -777,7 +922,7 @@ def export_excel():
         st_scope = scope if scope in ("real", "test") else ("real" if scoped("real") else "test")
         st = stats.compute(stats_items(st_scope), state["score_per_q"], state["exam"])
         out = excel_export.build(state["exam"], state["score_per_q"], judged, st, st_scope,
-                                 state["pass_average"], state["subject_fail_cutoff"], part)
+                                 state["pass_average"], state["subject_fail_cutoff"], part, absent=roster_summary().get("absent"))
     name = state["exam"]["name"].replace("/", "_").replace("\\", "_")
     return send_file(
         out,
@@ -978,6 +1123,8 @@ def delete_exam(eid):
         remove_result_files(store.load_results(eid))
         store.delete_results(exam_id=eid)
         store.delete_setting("state:" + eid)
+        store.delete_setting("roster:" + eid)
+        _roster_cache.pop(eid, None)
         registry["list"] = [e for e in registry["list"] if e["id"] != eid]
         save_registry()
     return jsonify({"status": "success"})

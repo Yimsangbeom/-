@@ -99,7 +99,7 @@ def _bar_with_refs(ws, title, cat_col, bar_col, ref_cols, n_rows, anchor, x_titl
     ws.add_chart(bar, anchor)
 
 
-def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, part="all"):
+def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, part="all", absent=None):
     """judged: with_judge 결과 목록, st: stats.compute 결과. part='stats' 이면 통계 시트만."""
     subj = exam_mod.subject_ranges(exam)
     n_q = exam_mod.total_questions(exam)
@@ -120,6 +120,7 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 r["표시한 유형"] = it.get("marked_type") or ""
                 r["유형 확인"] = it.get("type_note", "")
                 r["교정"] = "교정됨" if it.get("corrected") else ""
+                r["명단 확인"] = ", ".join(it.get("roster_flags") or [])
                 for code, name, short, a, b in subj:
                     r[f"{code}.{short}({(b - a + 1) * spq:g})"] = ss[code]
                 r.update({f"총점({tmax:g})": it["total_score"], "평균": it["average"],
@@ -137,6 +138,8 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 detail.append(d)
             pd.DataFrame(rows).to_excel(w, sheet_name="성적총괄표", index=False)
             pd.DataFrame(detail).to_excel(w, sheet_name="문항별답안", index=False)
+            if absent:
+                pd.DataFrame([{"수험번호": x["id"], "이름": x["name"]} for x in absent]).to_excel(w, sheet_name="미응시자", index=False)
             from openpyxl.styles import Alignment
             ws = w.sheets["성적총괄표"]
             for c in ws[1]:                       # 긴 문항 목록이 줄바꿈되어 행이 커지지 않게 한다

@@ -88,6 +88,21 @@
         <div class="flex-1 relative min-h-[360px]"><div id="key-summary" class="absolute inset-0 text-sm bg-slate-50 p-4 rounded border overflow-y-auto font-mono"></div></div>
       </div>
 
+      <div id="roster-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex flex-wrap justify-between items-start gap-3 mb-2">
+          <h2 class="text-lg font-bold">응시자 명단 등록 (수험번호 - 이름)</h2>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="downloadRosterSample()" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-2 rounded font-bold">명단 양식 샘플(.xlsx)</button>
+            <label class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-2 rounded font-bold cursor-pointer">명단 파일 선택(.xlsx / .csv)<input type="file" accept=".xlsx,.csv" class="hidden" onchange="uploadRoster(event)"></label>
+            <button id="roster-del" onclick="deleteRoster()" class="hidden bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-bold">명단 삭제</button>
+          </div>
+        </div>
+        <p class="text-sm text-slate-600">첫 줄에 <b>수험번호</b>와 <b>이름</b>(또는 성명) 제목이 있는 엑셀/CSV를 올리면, 수험번호로 이름을 찾아 <b>엑셀 결과표의 이름 열에 글자로</b> 넣습니다(화면의 이름 사진은 그대로입니다). 직접 입력한 이름은 덮어쓰지 않습니다. 명단은 이 서버에만 저장됩니다.</p>
+        <p class="text-xs text-slate-500 mt-1">추가 기능: 판독하지 못한 수험번호 자리(?)를 명단으로 복구(검수 확인 필요 표시), 명단에 없는 수험번호 표시, 명단에는 있는데 답안지가 없는 미응시자를 엑셀 [미응시자] 시트로 제공합니다.</p>
+        <div id="roster-status" class="mt-3 text-sm"></div>
+        <div id="roster-absent" class="hidden mt-2 text-xs bg-slate-50 border rounded p-3 max-h-48 overflow-auto"></div>
+      </div>
+
       <div id="test-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
         <h2 class="text-lg font-bold mb-1">테스트용 가상 답안지</h2>
         <p class="text-sm text-slate-600 mb-4">실제 답안지가 없을 때 동작을 확인하는 용도입니다. 실제 정답 설정은 바뀌지 않으며, 테스트 결과에는 [테스트] 표시가 붙고 아래 버튼으로 따로 지울 수 있습니다.</p>
@@ -487,11 +502,13 @@
       const t = item.type_status && item.type_status !== '정상';
       const idBad = String(item.student_id).includes('?');
       if (item.corrected) return '<span class="px-2 py-0.5 rounded bg-sky-100 text-sky-700 font-bold whitespace-nowrap">교정됨</span>';
-      if (!item.needs_review && !t && !idBad) return '<span class="text-emerald-600 font-bold whitespace-nowrap">정상</span>';
+      const rf = item.roster_flags || [];
+      if (!item.needs_review && !t && !idBad && !rf.length) return '<span class="text-emerald-600 font-bold whitespace-nowrap">정상</span>';
       const line = (txt, tip) => `<span class="${block ? 'block ' : ''}text-[11px] text-red-600 font-bold whitespace-nowrap" ${tip ? `title="${esc(tip)}"` : ''}>${txt}</span>`;
       let h = '<span class="text-red-600 font-bold whitespace-nowrap">검수필요</span>';
       if (t) h += (block ? '' : ' ') + line(item.type_status === '유형불일치' ? 'A/B형 표기 오류 의심' : 'A/B형 표기 없음/중복', item.type_note);
-      if (idBad) h += (block ? '' : ' ') + line('수험번호 확인');
+      rf.forEach(x => { h += (block ? '' : ' ') + line(esc(x), (item.id_candidates || []).join(', ') || (item.id_read ? '판독값 ' + item.id_read : '')); });
+      if (idBad && !rf.length) h += (block ? '' : ' ') + line('수험번호 확인');
       if (item.multi_count || item.blank_count) h += ` <span class="${block ? 'block ' : ''}text-[11px] text-slate-500 whitespace-nowrap">이중 ${item.multi_count} · 무표기 ${item.blank_count}</span>`;
       return h;
     }
@@ -502,7 +519,7 @@
       return `<span title="${esc(item.type_note || '')}" class="cursor-help">${esc(item.exam_type)}<span class="block text-[11px] text-red-600 font-bold whitespace-nowrap">유형확인 (${from})</span></span>`;
     }
     function personCell(item, small) {
-      const label = item.name ? `<span class="font-bold">${esc(item.name)}</span>`
+      const label = (item.name && item.name_src !== '명단') ? `<span class="font-bold">${esc(item.name)}</span>`
         : (item.name_url ? `<img src="${item.name_url}" class="${small ? 'h-6 max-w-[76px]' : 'h-8 max-w-[150px]'} object-contain inline-block border rounded bg-white" alt="이름 칸">` : '<span class="text-slate-400">-</span>');
       return `<span class="cursor-pointer" title="이름 칸 사진입니다. 클릭하여 이름을 입력하세요" onclick="editName(${item.id})">${label}</span>`;
     }
@@ -625,6 +642,39 @@
       const r = await (await fetch('/api/results/' + ed.id + '/uncorrect', { method: 'POST' })).json();
       if (r.status !== 'success') { alert(r.message); return; }
       await refreshResults(); loadEd();
+    }
+
+    // ---------- 응시자 명단 ----------
+    async function loadRoster() {
+      let d; try { d = await (await fetch('/api/roster')).json(); } catch (e) { return; }
+      const box = document.getElementById('roster-status'); if (!box) return;
+      document.getElementById('roster-del').classList.toggle('hidden', !d.registered);
+      if (!d.registered) { box.innerHTML = '<span class="text-slate-500">등록된 명단이 없습니다.</span>'; document.getElementById('roster-absent').classList.add('hidden'); return; }
+      const ab = d.absent || [];
+      box.innerHTML = `<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 text-xs font-bold">등록됨</span> <b>${esc(d.filename)}</b> · 명단 ${d.count}명 · 채점된 답안지 ${d.graded}장 · `
+        + `<button class="underline ${ab.length ? 'text-amber-700 font-bold' : 'text-slate-500'}" onclick="toggleAbsent()">미응시자 ${ab.length}명</button>`
+        + (d.unknown ? ` · <span class="text-red-600 font-bold">명단에 없는 수험번호 ${d.unknown}건</span>` : '')
+        + (d.duplicates && d.duplicates.length ? ` · <span class="text-red-600">명단 내 이름이 다른 중복 번호 ${d.duplicates.length}건 (${esc(d.duplicates.slice(0, 3).join(', '))}${d.duplicates.length > 3 ? ' ...' : ''})</span>` : '')
+        + (d.skipped ? ` · <span class="text-slate-500">읽지 못한 줄 ${d.skipped}개</span>` : '') + `<span class="text-xs text-slate-400"> (등록 ${esc(d.updated)})</span>`;
+      document.getElementById('roster-absent').innerHTML = ab.length ? '<b>미응시자</b> (명단에는 있으나 답안지가 없는 수험번호)<br>' + ab.map(x => `${esc(x.id)} ${esc(x.name)}`).join(' &nbsp;·&nbsp; ') : '';
+    }
+    function toggleAbsent() { const b = document.getElementById('roster-absent'); if (b.innerHTML) b.classList.toggle('hidden'); }
+    async function uploadRoster(e) {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      busy(true, '명단을 등록하는 중...', null, f.name);
+      let r; try { r = await (await fetch('/api/roster', { method: 'POST', body: fd })).json(); } catch (err) { r = { status: 'error', message: String(err) }; }
+      await notify(r.status === 'success' ? `명단 ${r.count}명을 등록했습니다.` + (r.graded ? `\n이미 채점된 ${r.graded}장에도 적용했습니다.` : '') : '등록하지 못했습니다: ' + r.message);
+      await loadRoster(); refreshResults();
+    }
+    async function deleteRoster() {
+      if (!confirm('등록한 응시자 명단을 삭제합니다.\n명단으로 채운 이름과 수험번호 복구 표시가 제거됩니다. (직접 입력한 이름은 유지)\n계속할까요?')) return;
+      await fetch('/api/roster', { method: 'DELETE' }); await loadRoster(); refreshResults();
+    }
+    function downloadRosterSample() {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['수험번호', '이름'], ['261220001', '홍길동'], ['261220002', '김철수']]), '응시자명단');
+      XLSX.writeFile(wb, '응시자명단_양식샘플.xlsx');
     }
 
     async function regrade() {
@@ -1061,7 +1111,7 @@
     }
     async function afterExamChanged() {
       resultScope = null; selectedIds.clear();
-      await loadConfig(); await refreshResults(); loadTestInfo(); loadSystemInfo();
+      await loadConfig(); await refreshResults(); loadTestInfo(); loadSystemInfo(); loadRoster();
       if (document.getElementById('res-stats') && resultView === 'stats') loadStats();
     }
     async function saveExam(activate) {
@@ -1100,7 +1150,7 @@
       await loadExams();
     }
 
-    loadConfig().then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); });
+    loadConfig().then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); loadRoster(); });
   </script>
 </body>
 </html>
