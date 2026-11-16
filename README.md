@@ -85,3 +85,8 @@
 - OCR 연결은 `conf\ocr.conf` (80: 인증서 갱신 경로 + https 이동, 443: 127.0.0.1:5000 프록시). `nginx.conf` 의 http 블록에 `include ocr.conf;` 한 줄로 포함
 - 확인 명령: `Get-CimInstance Win32_Process -Filter "Name='nginx.exe'"` 의 부모가 `nssm` 인 마스터/워커만 보여야 함. `netstat -ano | findstr LISTENING | findstr ":80 :443 "` 의 소유 PID 도 그 워커 하나
 - OCR 서버 상태: `http://127.0.0.1:5000/healthz` -> `{"status":"ok"}`
+
+## 마킹 판독 규칙
+- 빨간색 표시는 검토용으로 보고 답안으로 인식하지 않습니다 (검정/파랑 계열 필기구만 답안). 빨간 표시에 가려진 부분은 판독에서 제외합니다.
+- 한 문항에 2개 이상 표시하면(정답이 포함되어도) 이중마킹으로 오답 처리(0점)하며, 판독 화면에 보라색 원(표시한 칸)과 파란 원(정답)으로 보입니다. 엑셀 성적총괄표에 이중마킹/무표기 문항 번호가 표시됩니다.
+- 검증: `python test_marks.py`

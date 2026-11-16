@@ -118,7 +118,10 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 r.update({f"총점({tmax:g})": it["total_score"], "평균": it["average"],
                           "석차": 1 + sum(1 for t in totals if t > it["total_score"]), "판정": it["result"],
                           "과락과목": ",".join(it["fail_subjects"]), "무표기": it["blank_count"],
-                          "이중마킹": it["multi_count"], "검수필요여부": "검수필요" if it["needs_review"] else "정상"})
+                          "이중마킹": it["multi_count"],
+                          "이중마킹 문항": ",".join(str(q) for q in sorted(int(k) for k, v in it.get("student_answers", {}).items() if v == "이중")),
+                          "무표기 문항": ",".join(str(q) for q in sorted(int(k) for k, v in it.get("student_answers", {}).items() if v == "무표기")),
+                          "검수필요여부": "검수필요" if it["needs_review"] else "정상"})
                 rows.append(r)
                 sa = it.get("student_answers", {})
                 d = {"수험번호": it["student_id"], "유형": it["exam_type"]}

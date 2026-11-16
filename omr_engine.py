@@ -178,6 +178,14 @@ class OMREngine:
         cv2.circle(mask, (int(cx - x1), int(cy - y1)), r - 2, 255, -1)
         total_pixels = cv2.countNonZero(mask)
         if total_pixels == 0: return 0.0
+        red = getattr(self, '_red', None)
+        if red is not None:      # 빨간 표시에 가려진 부분은 분모에서 제외 (가려진 정도가 크면 판단 불가 -> 0)
+            rr = red[y1:y2, x1:x2]
+            mask = cv2.bitwise_and(mask, cv2.bitwise_not(rr))
+            left = cv2.countNonZero(mask)
+            if left < total_pixels * 0.3:
+                return 0.0
+            total_pixels = left
         return cv2.countNonZero(cv2.bitwise_and(roi, roi, mask=mask)) / float(total_pixels)
 
     def pick_marked(self, ratios, th):
@@ -195,6 +203,12 @@ class OMREngine:
         vis_img = aligned.copy()
         gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
         _, binary = cv2.threshold(gray, 175, 255, cv2.THRESH_BINARY_INV)
+        # 규칙 1: 빨간색 표시는 검토용이므로 답안(먹)으로 보지 않는다 -> 빨간 픽셀(과 번진 가장자리)은 잉크에서 제외
+        b_, g_, r_ = [c.astype(np.int16) for c in cv2.split(aligned)]
+        red = (((r_ - np.maximum(g_, b_)) > 45) & (r_ > 90)).astype(np.uint8) * 255
+        red = cv2.dilate(red, np.ones((3, 3), np.uint8))
+        binary[red > 0] = 0
+        self._red = red
         r, th = self.cfg['bubble_radius'], self.fill_threshold
 
         # 문제 유형 표시칸: 시험에서 쓰는 유형만 인식 (그 외 칸은 무시)
@@ -257,8 +271,13 @@ class OMREngine:
                 student_answers[q_num] = '무표기'
                 blank_count += 1
             else:
+                # 규칙 2: 한 문항에 2개 이상 표시(정답 포함)하면 이중마킹 = 오답 (점수 없음). 판독 화면에 보라색으로 표시
                 student_answers[q_num] = '이중'
                 multi_count += 1
+                for _, m_cx, m_cy in marked:
+                    cv2.circle(vis_img, (int(m_cx), int(m_cy)), r + 3, (200, 0, 200), 3)
+                if 1 <= correct_choice <= n_ch:
+                    cv2.circle(vis_img, (int(centers[correct_choice - 1][0]), int(centers[correct_choice - 1][1])), r, (255, 100, 0), 2)
 
         total_score = sum(subject_scores.values())
         needs_review = (type_status != '정상') or (id_warnings > 0) or (multi_count > 0) or (blank_count > 0)

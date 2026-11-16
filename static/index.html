@@ -434,7 +434,7 @@
       gradedList.forEach(x => { if (!x.is_test && !String(x.student_id).includes('?')) dupCount[x.student_id] = (dupCount[x.student_id] || 0) + 1; });
       let html1 = '';
       gradedList.forEach((item, i) => {
-        const badge = item.needs_review ? '<span class="text-red-600 font-bold whitespace-nowrap">검수필요</span>' : '<span class="text-emerald-600 font-bold whitespace-nowrap">정상</span>';
+        const badge = (item.needs_review ? '<span class="text-red-600 font-bold whitespace-nowrap">검수필요</span>' : '<span class="text-emerald-600 font-bold whitespace-nowrap">정상</span>') + `${(item.multi_count || item.blank_count) ? ` <span class="text-xs text-slate-500 whitespace-nowrap">이중 ${item.multi_count} · 무표기 ${item.blank_count}</span>` : ''}`;
         const dup = dupCount[item.student_id] > 1 && !item.is_test ? ' <span class="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-bold whitespace-nowrap" title="같은 수험번호가 여러 번 올라왔습니다">중복</span>' : '';
         html1 += `<tr onclick="showPreview('${item.vis_url}')" class="hover:bg-blue-50 cursor-pointer border-b">
           <td class="p-2" onclick="event.stopPropagation()"><input type="checkbox" ${selectedIds.has(item.id) ? 'checked' : ''} onchange="toggleSel(${item.id}, this.checked)"></td>
@@ -455,7 +455,7 @@
         `<label class="cursor-pointer"><input type="radio" name="scope" value="test" ${sc === 'test' ? 'checked' : ''} onchange="setScope('test')"> 테스트 결과 (${nTest}건)</label>`;
       let html2 = '';
       list.forEach((item, i) => {
-        const badge = item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>';
+        const badge = (item.needs_review ? '<span class="text-red-600 font-bold">검수필요</span>' : '<span class="text-emerald-600 font-bold">정상</span>') + `${(item.multi_count || item.blank_count) ? ` <span class="text-xs text-slate-500 whitespace-nowrap">이중 ${item.multi_count} · 무표기 ${item.blank_count}</span>` : ''}`;
         html2 += `<tr class="border-b">
           <td class="p-2">${i+1}</td><td class="p-2 text-left">${nameCell(item)}</td><td class="p-2">${item.exam_type}</td><td class="p-2 font-mono">${esc(item.student_id)}</td>
           ${codesOf().map(c => subCell(item, c)).join('')}
