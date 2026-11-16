@@ -99,7 +99,7 @@ def _bar_with_refs(ws, title, cat_col, bar_col, ref_cols, n_rows, anchor, x_titl
     ws.add_chart(bar, anchor)
 
 
-def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, part="all", absent=None):
+def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, part="all", absent=None, images=None):
     """judged: with_judge 결과 목록, st: stats.compute 결과. part='stats' 이면 통계 시트만."""
     subj = exam_mod.subject_ranges(exam)
     n_q = exam_mod.total_questions(exam)
@@ -226,5 +226,7 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 name, k = f"{base}{k}", k + 1
             used.add(name)
             pd.DataFrame(row).to_excel(w, sheet_name=name[:31], index=False)
+        import excel_screen
+        excel_screen.add_screen_sheet(w.book, exam, st, st_scope, tmax, pass_average, subject_fail_cutoff, images or [], first=(part == "stats"))
     out.seek(0)
     return out

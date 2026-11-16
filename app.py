@@ -908,11 +908,18 @@ def api_stats():
     return jsonify(data)
 
 
-@app.route("/api/export/excel", methods=["GET"])
+@app.route("/api/export/excel", methods=["GET", "POST"])
 def export_excel():
-    """엑셀 다운로드. part=stats 이면 통계(차트 포함)만, 아니면 결과 + 문항별 답안 + 통계(차트 포함)."""
-    scope = request.args.get("scope", "all")
-    part = request.args.get("part", "all")
+    """엑셀 다운로드. part=stats 이면 통계(차트 포함)만, 아니면 결과 + 문항별 답안 + 통계(차트 포함).
+    POST 로 화면의 그래프 그림(images=[{title, png(base64)}])을 함께 보내면 '통계(화면)' 시트에 화면과 같은 그래프를 넣는다."""
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else {}
+    scope = body.get("scope") or request.args.get("scope", "all")
+    part = body.get("part") or request.args.get("part", "all")
+    images = []
+    for im in (body.get("images") or [])[:24]:
+        png = str(im.get("png", ""))
+        if png.startswith("data:image/png;base64,") and len(png) < 4_000_000:
+            images.append({"title": str(im.get("title", ""))[:80], "png": png})
     with lock:
         base = scoped(scope)
         if not base:
@@ -922,7 +929,7 @@ def export_excel():
         st_scope = scope if scope in ("real", "test") else ("real" if scoped("real") else "test")
         st = stats.compute(stats_items(st_scope), state["score_per_q"], state["exam"])
         out = excel_export.build(state["exam"], state["score_per_q"], judged, st, st_scope,
-                                 state["pass_average"], state["subject_fail_cutoff"], part, absent=roster_summary().get("absent"))
+                                 state["pass_average"], state["subject_fail_cutoff"], part, absent=roster_summary().get("absent"), images=images)
     name = state["exam"]["name"].replace("/", "_").replace("\\", "_")
     return send_file(
         out,

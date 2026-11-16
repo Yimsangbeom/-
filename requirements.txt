@@ -8,3 +8,4 @@ pymupdf
 waitress
 sqlalchemy
 psycopg2-binary
+pillow

@@ -88,4 +88,12 @@ for it in bad:
     if it["exam_type"] == "B":
         k = list(it["_key"]); k[0] = k[0] % 5 + 1; it["_key"] = k          # B형 1번 = A형 11번
 assert stats.compute(bad, 5.0)["key_conflicts"] == [11]
-print("통합 분석/블록 비교/정답 불일치 OK"); print("ALL PASS")
+# A/B 정답이 대부분 맞지 않으면(블록 맞바꿈 가정이 틀림) 통합 분석/블록 비교를 만들지 않는다
+off = make(15, "A") + make(15, "B")
+for it in off:
+    if it["exam_type"] == "B":
+        it["_key"] = [k % 5 + 1 for k in it["_key"]]
+r = stats.compute(off, 5.0)
+assert r["pair_invalid"] and r["blocks"] == [] and r["key_conflicts"] == [] and [f["label"][:2] for f in r["forms"]] == ["A형", "B형"], [f["label"] for f in r["forms"]]
+assert stats.compute(bad, 5.0)["pair_invalid"] is False and stats.compute(bad, 5.0)["forms"][0]["label"].startswith("통합")
+print("통합 분석/블록 비교/정답 불일치/관계 불일치 OK"); print("ALL PASS")

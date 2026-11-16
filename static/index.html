@@ -825,8 +825,40 @@
     }
     function setScope(v) { resultScope = v; itemForm = 0; renderResultTab(); }
     function setResultView(v) { resultView = v; renderResultTab(); }
-    function downloadExcel() { window.location.href = '/api/export/excel?scope=' + currentScope(); }
-    function downloadStatsExcel() { window.location.href = '/api/export/excel?part=stats&scope=' + currentScope(); }
+    // 엑셀: 화면(통계)의 그래프를 그림으로 만들어 함께 보내면, 엑셀 '통계(화면)' 시트에 화면과 같은 그래프가 들어간다
+    async function svgToPng(svg) {
+      const vb = svg.viewBox.baseVal, W = vb.width, H = vb.height, ns = 'http://www.w3.org/2000/svg';
+      const c = svg.cloneNode(true);
+      c.setAttribute('xmlns', ns); c.setAttribute('width', W); c.setAttribute('height', H); c.removeAttribute('class');
+      c.setAttribute('font-family', "'Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif");
+      const bg = document.createElementNS(ns, 'rect'); bg.setAttribute('width', W); bg.setAttribute('height', H); bg.setAttribute('fill', '#ffffff'); c.insertBefore(bg, c.firstChild);
+      const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(c)], { type: 'image/svg+xml;charset=utf-8' }));
+      try {
+        const img = new Image(); await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+        const cv = document.createElement('canvas'); cv.width = W * 2; cv.height = H * 2;
+        const cx = cv.getContext('2d'); cx.scale(2, 2); cx.drawImage(img, 0, 0, W, H);
+        return cv.toDataURL('image/png');
+      } finally { URL.revokeObjectURL(url); }
+    }
+    async function exportExcel(part) {
+      busy(true, '엑셀을 만드는 중...', null, '화면의 그래프를 그림으로 담고 있습니다');
+      try {
+        await loadStats();
+        const images = [];
+        for (const svg of document.querySelectorAll('#res-stats svg')) {
+          const h = svg.parentElement.querySelector('h3, h4'); if (!svg.viewBox || !svg.viewBox.baseVal.width) continue;
+          try { images.push({ title: h ? h.innerText.trim() : '', png: await svgToPng(svg) }); } catch (e) { /* 그래프 한 개 실패해도 나머지는 진행 */ }
+        }
+        const r = await fetch('/api/export/excel', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ scope: currentScope(), part, images }) });
+        if (!r.ok) { let m = '엑셀을 만들지 못했습니다.'; try { m = (await r.json()).message || m; } catch (e) {} await notify(m); return; }
+        const cd = r.headers.get('Content-Disposition') || '', m2 = cd.match(/filename\*=UTF-8''([^;]+)/);
+        const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob()); a.download = m2 ? decodeURIComponent(m2[1]) : '채점결과.xlsx';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      } catch (err) { await notify('엑셀을 만들지 못했습니다: ' + err); }
+      finally { busy(false); }
+    }
+    function downloadExcel() { return exportExcel('all'); }
+    function downloadStatsExcel() { return exportExcel('stats'); }
 
     // ---------- 통계 ----------
     const FLAG = {key: ['정답키 확인', 'bg-red-100 text-red-700'], hard: ['매우 어려움', 'bg-orange-100 text-orange-700'],

@@ -115,10 +115,15 @@ def compute(items, spq, exam=None):
         gs = [(len(g), k) for (tt, k), g in groups.items() if tt == t]
         if gs:
             key_of[t] = list(max(gs)[1])      # 인원이 가장 많은 정답 설정
-    conflicts, blocks = [], []
+    conflicts, blocks, pair_invalid = [], [], False
     paired = exam["form_rule"] == "half_swap" and f2 is not None
     if paired and {f1, f2} <= types and len(key_of) == 2:
         conflicts = exam_mod.key_conflicts(exam, key_of[f1], key_of[f2])
+        if len(conflicts) > 0.3 * n_q:
+            # A형/B형 정답이 대부분 맞지 않으면 '앞/뒤 블록을 맞바꾼 같은 시험'이라는 가정이 실제와 다르다.
+            # 이때 합산 분석/블록 비교는 의미가 없고(절반이 다른 보기를 정답으로 고른 것처럼 보여 역변별이 잔뜩 생김) 오해만 부르므로 만들지 않는다.
+            conflicts, paired, pair_invalid = [], False, True
+    if paired and {f1, f2} <= types and len(key_of) == 2:
         # 통합 문항 분석: 두 유형 응시자를 첫 번째 유형 번호 기준으로 합쳐서 분석 (같은 문제를 푼 사람이 늘어남)
         merged = []
         for it in items:
@@ -151,7 +156,7 @@ def compute(items, spq, exam=None):
 
     return {"n": n, "summary": summary, "distribution": distribution, "avg_full": round(avg_full, 2), "subjects": subjects,
             "forms_summary": forms_summary, "forms": forms, "min_n_item": MIN_N_ITEM,
-            "key_conflicts": conflicts, "blocks": blocks, "paired": paired, "forms_list": exam["forms"],
+            "key_conflicts": conflicts, "blocks": blocks, "paired": paired, "pair_invalid": pair_invalid, "forms_list": exam["forms"],
             "legacy_n": sum(1 for it in items if it.get("_legacy"))}
 
 
