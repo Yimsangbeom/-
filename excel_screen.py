@@ -11,6 +11,13 @@ FONT = "맑은 고딕"
 LEVEL_FILL = {"쉬움": "DCFCE7", "보통": "FEF3C7", "어려움": "FEE2E2"}
 
 
+def excel_forms(st):
+    """엑셀에 내보낼 문항 분석 대상: A·B 합산(통합) 분석이 있으면 그것 하나만, 없으면 유형별 분석 전부."""
+    forms = st.get("forms", [])
+    merged = [f for f in forms if f["label"].startswith("통합")]
+    return merged[:1] or forms
+
+
 def add_screen_sheet(wb, exam, st, st_scope, tmax, pass_average, cut, images, first=False):
     ws = wb.create_sheet("통계(화면)")
     pos = 0 if first else min(2, len(wb.sheetnames) - 1)
@@ -122,7 +129,7 @@ def add_screen_sheet(wb, exam, st, st_scope, tmax, pass_average, cut, images, fi
     spans = [1, 1, 3, 1, 1, 1] + [1] * nch + [1, 1, 1]
     spans.append(max(2, NC - sum(spans)))
     header = ["문항", "대응 번호", "과목", "정답", "정답률", "오답률"] + [f"{c}번" for c in range(1, nch + 1)] + ["무표기", "이중", "변별도", "검토"]
-    for fm in st.get("forms", []):
+    for fm in excel_forms(st):
         r = section(f'문항 분석 - {fm["label"]} ({fm["n"]}명)' + ("" if fm["enough"] else f' · 응시자 {st.get("min_n_item", 10)}명 미만이라 변별도·검토 표시 보류(참고용)'), r)
         c = 1
         for h, sp in zip(header, spans):

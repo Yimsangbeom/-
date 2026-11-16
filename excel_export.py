@@ -209,7 +209,8 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
 
         used = set()
         chs = list(range(1, exam["choices"] + 1))
-        for fm_ in st["forms"]:
+        import excel_screen
+        for fm_ in excel_screen.excel_forms(st):        # 합산(통합) 분석이 있으면 그것 하나만
             row = []
             for it in fm_["items"]:
                 r = {"문항": it["q"], "대응 번호": it["alt_q"], "과목": it["subject_name"], "정답": it["answer"],

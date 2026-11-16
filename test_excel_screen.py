@@ -31,4 +31,9 @@ wb = openpyxl.load_workbook(io.BytesIO(r.data)); assert wb.sheetnames[0] == "성
 # 이미지 없이(GET/백업용)도 동작, 이상한 이미지는 무시
 assert c.get("/api/export/excel?scope=test").status_code == 200
 assert c.post("/api/export/excel", json={"scope": "test", "images": [{"title": "x", "png": "data:text/html;base64,AAAA"}]}).status_code == 200
+# 문항 분석: 합산(통합)이 있으면 하나만, 없으면 유형별
+import excel_screen
+fa = {"label": "A형", "n": 3}; fb = {"label": "B형", "n": 3}; fm = {"label": "통합 (A형 번호 기준, A·B 합산)", "n": 6}
+assert [f["label"][:2] for f in excel_screen.excel_forms({"forms": [fm, fa, fb]})] == ["통합"]
+assert [f["label"] for f in excel_screen.excel_forms({"forms": [fa, fb]})] == ["A형", "B형"] and excel_screen.excel_forms({"forms": [fa]}) == [fa]
 print("ALL PASS")
