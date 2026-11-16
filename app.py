@@ -512,16 +512,89 @@ def regrade():
     ex, keys, thr = snapshot()
     with lock:
         pool = [r for r in graded_results if not r.get("is_test")] if ids is None else [r for r in graded_results if r["id"] in {int(i) for i in ids}]
+        n_corrected = sum(1 for r in pool if r.get("corrected"))
+        pool = [r for r in pool if not r.get("corrected")]            # 사람이 교정한 결과는 다시 채점으로 덮어쓰지 않는다
         targets = [r for r in pool if r.get("src") and os.path.isfile(os.path.join(SOURCE_DIR, os.path.basename(r["src"])))]
         skipped = len(pool) - len(targets)
     if not targets:
-        return jsonify({"status": "error", "message": "다시 채점할 수 있는 답안지가 없습니다. (원본이 보관되지 않은 이전 결과는 파일을 다시 올려야 합니다.)", "skipped": skipped}), 400
+        return jsonify({"status": "error", "message": "다시 채점할 수 있는 답안지가 없습니다. (원본이 보관되지 않은 이전 결과는 파일을 다시 올려야 하고, 교정한 답안지는 제외됩니다.)", "skipped": skipped, "corrected": n_corrected}), 400
     job_id = uuid.uuid4().hex[:12]
     job = {"status": "running", "total": len(targets), "done": 0, "current": "", "errors": [], "n_results": 0, "t": time.time()}
     with jobs_lock:
         jobs[job_id] = job
     threading.Thread(target=_run_regrade, args=(job, targets, ex, keys, thr), daemon=True).start()
-    return jsonify({"status": "started", "job": job_id, "total": len(targets), "skipped": skipped})
+    return jsonify({"status": "started", "job": job_id, "total": len(targets), "skipped": skipped, "corrected": n_corrected})
+
+
+def rescore_item(item, answers, form, student_id):
+    """교정된 답안(문항별 선택)으로 점수를 다시 계산해 item 에 반영한다. (lock 안에서 호출)"""
+    ex = state["exam"]
+    n_q = exam_mod.total_questions(ex)
+    codes = exam_mod.codes(ex)
+    key = [int(x) for x in state["answer_keys"][form]][:n_q]
+    sc = {c: 0 for c in codes}
+    correct = multi = blank = 0
+    out = {}
+    for q in range(1, n_q + 1):
+        a = str(answers.get(str(q), "무표기"))
+        out[str(q)] = a
+        if a == "이중":
+            multi += 1
+        elif a == "무표기":
+            blank += 1
+        elif a == str(key[q - 1]):
+            sc[codes[exam_mod.subject_index(ex, q)]] += 1
+            correct += 1
+    item.update({"student_answers": out, "subject_correct": sc, "correct_count": correct, "multi_count": multi,
+                 "blank_count": blank, "exam_type": form, "student_id": student_id, "key_used": key})
+
+
+@app.route("/api/results/<int:rid>/correct", methods=["POST"])
+def correct_result(rid):
+    """답안지 수정(교정): 유형/수험번호/이름/문항별 답을 사람이 고치면 그 값으로 다시 채점한다(결과·통계에 반영).
+    원래 판독값은 orig 로 보관해 되돌릴 수 있다. body: {answers:{"1":"3",...}, exam_type, student_id, name}"""
+    data = request.get_json(silent=True) or {}
+    ex = state["exam"]
+    n_q, n_ch = exam_mod.total_questions(ex), ex["choices"]
+    form = str(data.get("exam_type", ""))
+    sid = str(data.get("student_id", "")).strip()
+    ans = data.get("answers") or {}
+    if form not in ex["forms"]:
+        return jsonify({"status": "error", "message": "문제 유형이 올바르지 않습니다."}), 400
+    if not sid or len(sid) > 20 or not all(ch.isdigit() or ch == "?" for ch in sid):
+        return jsonify({"status": "error", "message": "수험번호는 숫자(모르는 자리는 ?)로 입력하세요."}), 400
+    valid = {str(c) for c in range(1, n_ch + 1)} | {"무표기", "이중"}
+    for q in range(1, n_q + 1):
+        if str(ans.get(str(q), "무표기")) not in valid:
+            return jsonify({"status": "error", "message": f"{q}번 문항의 답이 올바르지 않습니다."}), 400
+    with lock:
+        for r in graded_results:
+            if r["id"] != rid:
+                continue
+            if "orig" not in r:       # 처음 교정할 때 원래 판독값 보관
+                r["orig"] = {k: copy.deepcopy(r.get(k)) for k in ("student_answers", "subject_correct", "correct_count", "multi_count", "blank_count",
+                                                                   "exam_type", "student_id", "key_used", "needs_review", "type_status", "type_note", "name")}
+            rescore_item(r, ans, form, sid)
+            r["name"] = str(data.get("name", r.get("name", ""))).strip()[:40]
+            r.update({"corrected": True, "needs_review": False, "type_status": "정상", "type_note": ""})
+            store.update_result(r)
+            return jsonify({"status": "success", "result": with_judge(r)})
+    return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
+
+
+@app.route("/api/results/<int:rid>/uncorrect", methods=["POST"])
+def uncorrect_result(rid):
+    """교정을 취소하고 원래 판독값으로 되돌린다."""
+    with lock:
+        for r in graded_results:
+            if r["id"] == rid:
+                if not r.get("corrected") or "orig" not in r:
+                    return jsonify({"status": "error", "message": "교정한 기록이 없습니다."}), 400
+                r.update(r.pop("orig"))
+                r["corrected"] = False
+                store.update_result(r)
+                return jsonify({"status": "success", "result": with_judge(r)})
+    return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
 
 
 @app.route("/api/results/<int:rid>/name", methods=["POST"])
@@ -545,6 +618,7 @@ def by_student_id(items):
 def with_judge(item):
     sc = scaled(item)
     status, fails = judge(sc)
+    sc = {k: v for k, v in sc.items() if k != "orig"}       # 원래 판독값 백업은 화면/통계로 내보내지 않는다
     return {**sc, "exam_title": state["exam"].get("title") or state["exam"]["name"], "average": round(sc["total_score"] / exam_mod.n_subjects(state["exam"]), 1), "result": status, "fail_subjects": fails}
 
 

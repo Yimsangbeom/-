@@ -134,6 +134,7 @@
           </label>
           <hr class="my-2">
           <div class="text-sm font-bold">목록 관리 (기존 자료 삭제)</div>
+          <button id="btn-edit" onclick="openEditor()" disabled class="w-full bg-sky-700 hover:bg-sky-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-bold py-2 rounded-lg">선택한 답안지 수정(교정)</button>
           <button id="btn-regrade" onclick="regrade()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2 rounded-lg">전체 다시 채점</button>
           <button id="btn-del-sel" onclick="deleteSelected()" class="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-bold py-2 rounded-lg" disabled>선택한 답안지 삭제 (0장)</button>
           <button onclick="clearTest()" class="w-full bg-slate-500 hover:bg-slate-600 text-white text-sm font-bold py-2 rounded-lg">테스트 결과만 삭제</button>
@@ -190,6 +191,38 @@
       <div id="res-stats" class="hidden space-y-4"></div>
     </section>
   </main>
+
+  <dialog id="edit-dlg" class="rounded-xl p-0 shadow-xl border w-[min(1280px,98vw)] h-[94vh] overflow-hidden">
+    <div class="flex flex-col h-full">
+      <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50">
+        <div><b class="text-base">답안지 수정(교정)</b> <span id="ed-pos" class="text-xs text-slate-500"></span><div id="ed-file" class="text-xs text-slate-500"></div></div>
+        <button onclick="closeEditor()" class="text-slate-500 hover:text-slate-800 font-bold px-3 py-1">닫기</button>
+      </div>
+      <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5">
+        <div class="lg:col-span-2 border-r bg-slate-900 overflow-auto p-2">
+          <div class="flex items-center justify-between text-xs text-slate-300 mb-1"><span>판독 화면 (초록=정답, 빨강=오답, 보라=이중). 이미지를 클릭하면 확대/축소됩니다.</span></div>
+          <img id="ed-img" class="w-full cursor-zoom-in" onclick="toggleEdZoom()" alt="판독 화면">
+        </div>
+        <div class="lg:col-span-3 flex flex-col min-h-0">
+          <div class="px-4 py-3 border-b grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <label class="block"><span class="text-xs text-slate-500">문제 유형</span><select id="ed-form" onchange="edChanged()" class="mt-1 w-full border rounded px-2 py-1.5 font-bold"></select></label>
+            <label class="block"><span class="text-xs text-slate-500">수험번호 (모르는 자리는 ?)</span><input id="ed-sid" oninput="edChanged()" class="mt-1 w-full border rounded px-2 py-1.5 font-mono font-bold"></label>
+            <label class="block"><span class="text-xs text-slate-500">이름</span><input id="ed-name" class="mt-1 w-full border rounded px-2 py-1.5 font-bold"></label>
+            <label class="flex items-end gap-2 pb-1.5"><input type="checkbox" id="ed-onlybad" onchange="renderEdGrid()"><span class="text-xs">문제 있는 문항만 보기 (이중/무표기/수정함)</span></label>
+          </div>
+          <div id="ed-preview" class="px-4 py-2 border-b text-sm bg-blue-50"></div>
+          <div id="ed-grid" class="flex-1 overflow-auto p-4"></div>
+          <div class="px-4 py-3 border-t bg-slate-50 flex flex-wrap items-center gap-2">
+            <button id="ed-revert" onclick="revertEdit()" class="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-700">교정 취소(원래 판독으로)</button>
+            <span class="flex-1"></span>
+            <button onclick="prevEdit()" id="ed-prev" class="px-3 py-2 rounded-lg border bg-white text-sm font-bold">이전</button>
+            <button onclick="saveEdit(false)" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold">저장</button>
+            <button onclick="saveEdit(true)" id="ed-savenext" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">저장 후 다음</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="pw-dlg" class="rounded-xl p-6 shadow-xl border w-80">
     <h3 class="font-bold mb-3">아이디 / 비밀번호 변경</h3>
@@ -453,6 +486,7 @@
     function reviewBadge(item, block) {
       const t = item.type_status && item.type_status !== '정상';
       const idBad = String(item.student_id).includes('?');
+      if (item.corrected) return '<span class="px-2 py-0.5 rounded bg-sky-100 text-sky-700 font-bold whitespace-nowrap">교정됨</span>';
       if (!item.needs_review && !t && !idBad) return '<span class="text-emerald-600 font-bold whitespace-nowrap">정상</span>';
       const line = (txt, tip) => `<span class="${block ? 'block ' : ''}text-[11px] text-red-600 font-bold whitespace-nowrap" ${tip ? `title="${esc(tip)}"` : ''}>${txt}</span>`;
       let h = '<span class="text-red-600 font-bold whitespace-nowrap">검수필요</span>';
@@ -504,6 +538,7 @@
     function updateSelUI() {
       const n = selectedIds.size, b = document.getElementById('btn-del-sel');
       if (b) { b.disabled = n === 0; b.innerText = `선택한 답안지 삭제 (${n}장)`; }
+      const eb = document.getElementById('btn-edit'); if (eb) { eb.disabled = n === 0; eb.innerText = n ? `선택한 ${n}장 수정(교정)` : '선택한 답안지 수정(교정)'; }
       const rg = document.getElementById('btn-regrade'); if (rg) rg.innerText = n ? `선택한 ${n}장 다시 채점` : '전체 다시 채점';
       const all = document.getElementById('sel-all');
       if (all) { all.checked = gradedList.length > 0 && n === gradedList.length; all.indeterminate = n > 0 && n < gradedList.length; }
@@ -511,6 +546,86 @@
     function toggleSel(id, on) { on ? selectedIds.add(id) : selectedIds.delete(id); updateSelUI(); }
     function toggleAll(on) { selectedIds.clear(); if (on) gradedList.forEach(x => selectedIds.add(x.id)); refreshSelBoxes(); updateSelUI(); }
     function refreshSelBoxes() { document.querySelectorAll('#sheet-tbody input[type=checkbox]').forEach((c, i) => { c.checked = selectedIds.has(gradedList[i].id); }); }
+    // ---------- 답안지 수정(교정) ----------
+    let ed = null, edQueue = [], edIdx = 0;
+    function openEditor() {
+      edQueue = gradedList.filter(x => selectedIds.has(x.id)).map(x => x.id);
+      if (!edQueue.length) return;
+      edIdx = 0; loadEd(); document.getElementById('edit-dlg').showModal();
+    }
+    function closeEditor() { document.getElementById('edit-dlg').close(); ed = null; }
+    function loadEd() {
+      const it = gradedList.find(x => x.id === edQueue[edIdx]); if (!it) { closeEditor(); return; }
+      const answers = {}, n = EI().total_questions;
+      for (let q = 1; q <= n; q++) answers[q] = String((it.student_answers || {})[q] ?? '무표기');
+      ed = { id: it.id, answers, orig: { ...answers }, corrected: !!it.corrected };
+      document.getElementById('ed-pos').innerText = `(${edIdx + 1}/${edQueue.length})`;
+      document.getElementById('ed-file').innerText = it.filename;
+      const img = document.getElementById('ed-img'); img.src = it.vis_url; img.classList.remove('max-w-none'); img.style.width = '';
+      document.getElementById('ed-form').innerHTML = EX().forms.map(f => `<option value="${esc(f)}" ${f === it.exam_type ? 'selected' : ''}>${esc(f)}형${it.marked_type === f ? ' (표시)' : ''}</option>`).join('');
+      document.getElementById('ed-sid').value = it.student_id;
+      document.getElementById('ed-name').value = it.name || '';
+      document.getElementById('ed-onlybad').checked = false;
+      document.getElementById('ed-revert').classList.toggle('hidden', !it.corrected);
+      document.getElementById('ed-prev').classList.toggle('hidden', edIdx === 0);
+      document.getElementById('ed-savenext').classList.toggle('hidden', edIdx >= edQueue.length - 1);
+      renderEdGrid(); edChanged();
+    }
+    function toggleEdZoom() { const i = document.getElementById('ed-img'); const big = i.style.width === '220%'; i.style.width = big ? '' : '220%'; i.classList.toggle('max-w-none', !big); i.classList.toggle('cursor-zoom-in', big); i.classList.toggle('cursor-zoom-out', !big); }
+    function setEdAns(q, v) { ed.answers[q] = ed.answers[q] === v ? '무표기' : v; renderEdGrid(); edChanged(); }
+    function renderEdGrid() {
+      if (!ed) return;
+      const only = document.getElementById('ed-onlybad').checked, nch = EX().choices, key = (currentConfig.answer_keys[document.getElementById('ed-form').value] || []);
+      let h = '';
+      (EI().ranges || []).forEach(r => {
+        let rows = '';
+        for (let q = r.start; q <= r.end; q++) {
+          const cur = ed.answers[q], was = ed.orig[q], changed = cur !== was, bad = was === '이중' || was === '무표기';
+          if (only && !(changed || bad)) continue;
+          const right = String(key[q - 1]);
+          let btns = '';
+          for (let c = 1; c <= nch; c++) {
+            const on = cur === String(c);
+            btns += `<button onclick="setEdAns(${q}, '${c}')" class="w-8 h-8 rounded border text-sm font-bold ${on ? (String(c) === right ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-red-500 text-white border-red-600') : 'bg-white text-slate-700 hover:bg-slate-100'} ${was === String(c) && !on ? 'ring-2 ring-amber-400' : ''}">${c}</button>`;
+          }
+          const tag = cur === '이중' ? '<span class="text-purple-700 font-bold text-xs">이중</span>' : (cur === '무표기' ? '<span class="text-slate-400 text-xs">무표기</span>' : '');
+          rows += `<div class="flex items-center gap-1 py-1 px-1 rounded ${changed ? 'bg-yellow-100' : (bad ? 'bg-red-50' : '')}"><span class="w-8 text-right text-xs font-bold text-slate-600 mr-1">${q}</span>${btns}<span class="ml-1 w-12">${tag}${changed && was !== cur ? `<span class="block text-[10px] text-amber-700">원래 ${esc(was)}</span>` : ''}</span></div>`;
+        }
+        h += `<div class="mb-4"><div class="font-bold text-sm text-blue-900 mb-1">${esc(r.code)}. ${esc(r.name)}</div><div class="grid grid-cols-1 xl:grid-cols-2 gap-x-4">${rows || '<div class="text-xs text-slate-400">해당 문항 없음</div>'}</div></div>`;
+      });
+      document.getElementById('ed-grid').innerHTML = h + '<div class="text-xs text-slate-500">버튼 색: 초록=정답, 빨강=오답(현재 선택한 유형 정답 기준). 같은 번호를 다시 누르면 무표기가 됩니다. 노란 테두리는 원래 판독값, 노란 줄은 수정한 문항입니다.</div>';
+    }
+    function edScore() {
+      const form = document.getElementById('ed-form').value, key = currentConfig.answer_keys[form] || [], spq = currentConfig.score_per_q;
+      const per = {}; (EI().ranges || []).forEach(r => { per[r.code] = 0; for (let q = r.start; q <= r.end; q++) if (ed.answers[q] === String(key[q - 1])) per[r.code] += spq; });
+      return per;
+    }
+    function edChanged() {
+      if (!ed) return;
+      const per = edScore(), cut = currentConfig.subject_fail_cutoff, vals = Object.values(per), total = vals.reduce((a, b) => a + b, 0), avg = vals.length ? total / vals.length : 0;
+      const fails = Object.keys(per).filter(c => cut > 0 && per[c] < cut);
+      const verdict = fails.length ? '과락' : (avg < currentConfig.pass_average ? '불합격' : '합격');
+      const n = EI().total_questions; let ch = 0; for (let q = 1; q <= n; q++) if (ed.answers[q] !== ed.orig[q]) ch++;
+      document.getElementById('ed-preview').innerHTML = `<b>교정 후 예상:</b> ` + Object.keys(per).map(c => `<span class="${fails.includes(c) ? 'text-red-600 font-bold' : ''}">${c} ${per[c]}</span>`).join(' · ') + ` &nbsp;|&nbsp; 총점 <b>${total}</b> · 평균 <b>${avg.toFixed(1)}</b> · <b class="${verdict === '합격' ? 'text-emerald-700' : 'text-red-600'}">${verdict}</b> &nbsp;|&nbsp; <span class="text-amber-700">수정한 문항 ${ch}개</span>`;
+      renderEdGridKeyColors();
+    }
+    function renderEdGridKeyColors() { /* 유형을 바꾸면 정답 색이 달라지므로 격자를 다시 그린다 */ if (ed && ed._form !== document.getElementById('ed-form').value) { ed._form = document.getElementById('ed-form').value; renderEdGrid(); } }
+    async function saveEdit(next) {
+      if (!ed) return;
+      const body = { exam_type: document.getElementById('ed-form').value, student_id: document.getElementById('ed-sid').value.trim(), name: document.getElementById('ed-name').value.trim(), answers: ed.answers };
+      const r = await (await fetch('/api/results/' + ed.id + '/correct', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })).json();
+      if (r.status !== 'success') { alert('저장하지 못했습니다: ' + r.message); return; }
+      await refreshResults();
+      if (next && edIdx < edQueue.length - 1) { edIdx++; loadEd(); } else closeEditor();
+    }
+    function prevEdit() { if (edIdx > 0) { edIdx--; loadEd(); } }
+    async function revertEdit() {
+      if (!ed || !confirm('이 답안지의 교정을 취소하고 처음 판독한 상태로 되돌립니다.\n계속할까요?')) return;
+      const r = await (await fetch('/api/results/' + ed.id + '/uncorrect', { method: 'POST' })).json();
+      if (r.status !== 'success') { alert(r.message); return; }
+      await refreshResults(); loadEd();
+    }
+
     async function regrade() {
       const ids = [...selectedIds], sel = ids.length > 0;
       const n = sel ? ids.length : gradedList.filter(x => !x.is_test).length;
@@ -530,7 +645,7 @@
         if (p.status === 'done') break;
       }
       await refreshResults();
-      await notify(p.status === 'done' ? `${p.n_results}장 다시 채점 완료` + (r.skipped ? `\n원본이 없어 건너뛴 ${r.skipped}장은 파일을 다시 올려 주세요.` : '') + (p.errors.length ? '\n\n오류 ' + p.errors.length + '건:\n' + p.errors.slice(0, 10).join('\n') : '') : '오류: ' + p.message);
+      await notify(p.status === 'done' ? `${p.n_results}장 다시 채점 완료` + (r.skipped ? `\n원본이 없어 건너뛴 ${r.skipped}장은 파일을 다시 올려 주세요.` : '') + (r.corrected ? `\n교정한 ${r.corrected}장은 교정 내용을 유지하기 위해 건너뛰었습니다.` : '') + (p.errors.length ? '\n\n오류 ' + p.errors.length + '건:\n' + p.errors.slice(0, 10).join('\n') : '') : '오류: ' + p.message);
     }
     async function deleteSelected() {
       const ids = [...selectedIds]; if (!ids.length) return;

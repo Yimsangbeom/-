@@ -119,6 +119,7 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                           "이름": it.get("name", ""), "파일명": it["filename"]})
                 r["표시한 유형"] = it.get("marked_type") or ""
                 r["유형 확인"] = it.get("type_note", "")
+                r["교정"] = "교정됨" if it.get("corrected") else ""
                 for code, name, short, a, b in subj:
                     r[f"{code}.{short}({(b - a + 1) * spq:g})"] = ss[code]
                 r.update({f"총점({tmax:g})": it["total_score"], "평균": it["average"],
