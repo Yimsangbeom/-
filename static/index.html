@@ -999,7 +999,7 @@
         <select id="item-sort" onchange="itemSort = this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm">
           <option value="q">문항 번호순</option><option value="wrong">오답률 높은 순</option><option value="disc">변별도 낮은 순</option><option value="flag">검토 필요 먼저</option></select>
         <span id="item-note" class="text-xs text-slate-500"></span></div>
-        <div class="overflow-x-auto max-h-[560px] overflow-y-auto"><table class="w-full text-xs text-center border-collapse">
+        <div id="item-wrap" class="overflow-x-auto overflow-y-auto"><table class="w-full text-xs text-center border-collapse">
         <thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border">문항</th><th class="p-2 border" title="다른 유형에서 같은 문제의 번호">대응 번호</th><th class="p-2 border">과목</th><th class="p-2 border">정답</th><th class="p-2 border">정답률</th><th class="p-2 border">오답률</th>
         ${Object.keys(d.forms[0].items[0].choices).filter(c => /^\d+$/.test(c)).map(c => `<th class="p-2 border">${c}번</th>`).join('')}<th class="p-2 border">무표기</th><th class="p-2 border">이중</th><th class="p-2 border">변별도</th><th class="p-2 border">검토</th></tr></thead>
         <tbody id="item-tbody"></tbody></table></div>
@@ -1033,6 +1033,9 @@
           <td class="p-1.5 border font-bold">${f1(it.correct_rate)}%</td><td class="p-1.5 border">${f1(it.wrong_rate)}%</td>
           ${[...Object.keys(it.choices)].map(ch).join('')}<td class="p-1.5 border">${it.disc == null ? '-' : it.disc.toFixed(2)}</td><td class="p-1.5 border text-left">${flags}</td></tr>`;
       }).join('');
+      // 표 높이를 '머리글 + 20문항'이 한 화면에 다 보이도록 맞춘다 (글꼴/화면 배율이 달라도 맞게 실제 높이로 계산). 그 아래 문항은 스크롤.
+      const wrap = document.getElementById('item-wrap'), r0 = document.querySelector('#item-tbody tr'), th = wrap && wrap.querySelector('thead');
+      if (wrap && r0 && th) wrap.style.maxHeight = (th.offsetHeight + r0.offsetHeight * Math.min(20, rows.length) + 8) + 'px';
     }
 
     async function loadTestInfo() {
