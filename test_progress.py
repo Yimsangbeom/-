@@ -32,3 +32,7 @@ df = pd.read_excel(io.BytesIO(d.data), sheet_name="성적총괄표")
 print(list(df.columns)[:8])
 assert list(df["순번"]) == [1, 2] and "시험명" in df.columns and "이름" in df.columns and "구분" not in df.columns
 print("ALL PASS")
+# 수험번호 순 정렬
+ids = [x["student_id"] for x in c.get("/api/results").get_json()]
+assert ids == sorted(ids, key=lambda v: ("?" in v, v)), ids
+print("정렬 OK")

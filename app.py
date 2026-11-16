@@ -467,6 +467,11 @@ def set_result_name(rid):
     return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
 
 
+def by_student_id(items):
+    """수험번호 순 정렬 (판독 못 한 자리가 '?'인 건은 맨 뒤, 같은 번호는 채점 순서)."""
+    return sorted(items, key=lambda x: ("?" in str(x.get("student_id", "")), str(x.get("student_id", "")), x["id"]))
+
+
 def with_judge(item):
     sc = scaled(item)
     status, fails = judge(sc)
@@ -478,7 +483,7 @@ def handle_results():
     global graded_results, next_id
     with lock:
         if request.method == "GET":
-            return jsonify([with_judge(r) for r in graded_results])
+            return jsonify([with_judge(r) for r in by_student_id(graded_results)])
         if request.args.get("scope") == "test":      # 테스트 결과만 삭제
             remove_result_files([r for r in graded_results if r.get("is_test")])
             graded_results = [r for r in graded_results if not r.get("is_test")]
@@ -615,7 +620,7 @@ def export_excel():
         base = scoped(scope)
         if not base:
             return jsonify({"status": "error", "message": "채점 결과가 없습니다."}), 400
-        judged = [with_judge(r) for r in base]
+        judged = [with_judge(r) for r in by_student_id(base)]
         # 통계 대상 (범위가 all 이면 실제 응시자 우선, 없으면 테스트)
         st_scope = scope if scope in ("real", "test") else ("real" if scoped("real") else "test")
         st = stats.compute(stats_items(st_scope), state["score_per_q"], state["exam"])
