@@ -279,10 +279,15 @@ class OMREngine:
                 if 1 <= correct_choice <= n_ch:
                     cv2.circle(vis_img, (int(centers[correct_choice - 1][0]), int(centers[correct_choice - 1][1])), r, (255, 100, 0), 2)
 
+        name_img = None
+        nb = (self.cfg.get('regions') or {}).get('name_box')          # 응시자 이름 손글씨 칸: 자동 인식은 못 하므로 사진으로 잘라 저장
+        if nb:
+            x0, y0, bw, bh = [int(v) for v in nb]
+            name_img = aligned[max(0, y0):y0 + bh, max(0, x0):x0 + bw].copy()
         total_score = sum(subject_scores.values())
         needs_review = (type_status != '정상') or (id_warnings > 0) or (multi_count > 0) or (blank_count > 0)
         return {
             'exam_type': exam_type, 'student_id': student_id, 'student_answers': student_answers,
             'subject_scores': subject_scores, 'total_score': total_score, 'correct_count': correct_count,
-            'multi_count': multi_count, 'blank_count': blank_count, 'needs_review': needs_review, 'vis_img': vis_img
+            'multi_count': multi_count, 'blank_count': blank_count, 'needs_review': needs_review, 'vis_img': vis_img, 'name_img': name_img
         }

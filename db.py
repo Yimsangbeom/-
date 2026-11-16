@@ -110,6 +110,10 @@ class Store:
                 "student_id": it.get("student_id"),
                 "data": json.dumps(it)} for it in items])      # 한글은 \\uXXXX 로 저장되어 DB 인코딩(SQL_ASCII 등)에 영향받지 않음
 
+    def update_result(self, item):
+        with self.engine.begin() as c:
+            c.execute(results_t.update().where(results_t.c.id == item["id"]).values(data=json.dumps(item)))
+
     def delete_results(self, is_test=None, ids=None, exam_id=None):
         """조건을 모두 만족하는 결과를 삭제. 조건이 없으면 전부.
         exam_id: 해당 시험만 / is_test: True·False 구분만 / ids: 그 번호만."""

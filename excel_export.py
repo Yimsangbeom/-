@@ -109,10 +109,14 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
         if part != "stats":
             totals = [x["total_score"] for x in judged]
             rows, detail = [], []
-            for it in judged:
+            has_test = any(x.get("is_test") for x in judged)
+            for seq, it in enumerate(judged, 1):
                 ss = it["subject_scores"]
-                r = {"구분": "테스트" if it.get("is_test") else "", "순번": it["id"] + 1, "파일명": it["filename"],
-                     "문제유형": it["exam_type"], "수험번호": it["student_id"]}
+                r = {"순번": seq}                 # 목록 맨 위부터 1, 2, 3 ... (저장 번호가 아님)
+                if has_test:
+                    r["구분"] = "테스트" if it.get("is_test") else "실제"
+                r.update({"시험명": it.get("exam_title", ""), "문제유형": it["exam_type"], "수험번호": it["student_id"],
+                          "이름": it.get("name", ""), "파일명": it["filename"]})
                 for code, name, short, a, b in subj:
                     r[f"{code}.{short}({(b - a + 1) * spq:g})"] = ss[code]
                 r.update({f"총점({tmax:g})": it["total_score"], "평균": it["average"],
@@ -130,6 +134,15 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 detail.append(d)
             pd.DataFrame(rows).to_excel(w, sheet_name="성적총괄표", index=False)
             pd.DataFrame(detail).to_excel(w, sheet_name="문항별답안", index=False)
+            from openpyxl.styles import Alignment
+            ws = w.sheets["성적총괄표"]
+            for c in ws[1]:                       # 긴 문항 목록이 줄바꿈되어 행이 커지지 않게 한다
+                width = {"시험명": 34, "파일명": 30, "이중마킹 문항": 28, "무표기 문항": 28}.get(c.value)
+                if width:
+                    ws.column_dimensions[c.column_letter].width = width
+            for row in ws.iter_rows(min_row=2):
+                for c in row:
+                    c.alignment = Alignment(wrap_text=False, vertical="center")
 
         sm = st["summary"]
         pd.DataFrame([

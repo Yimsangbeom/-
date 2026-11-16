@@ -123,9 +123,11 @@ def upgrade_state(st):
 
 def remove_result_files(items):
     for r in items:
-        p = os.path.join(RESULT_DIR, os.path.basename(r.get("vis_url", "")))
-        if os.path.isfile(p):
-            os.remove(p)
+        for k in ("vis_url", "name_url"):
+            if r.get(k):
+                p = os.path.join(RESULT_DIR, os.path.basename(r[k]))
+                if os.path.isfile(p):
+                    os.remove(p)
 
 
 def activate(exam_id):
@@ -235,9 +237,15 @@ def make_result(res, page_label, is_test=False, verify=None, keys=None):
     next_id += 1
     vis_name = f"vis_{rid}.jpg"
     cv2.imwrite(os.path.join(RESULT_DIR, vis_name), res["vis_img"])
+    name_url = ""
+    if res.get("name_img") is not None and res["name_img"].size:
+        cv2.imwrite(os.path.join(RESULT_DIR, f"name_{rid}.jpg"), res["name_img"])
+        name_url = f"/results/name_{rid}.jpg"
     item = {
         "id": rid,
         "filename": page_label,
+        "name_url": name_url,
+        "name": "",
         "exam_type": res["exam_type"],
         "student_id": res["student_id"],
         "subject_correct": {c: int(round(v)) for c, v in res["subject_scores"].items()},  # 맞힌 개수(배점 1점 기준)
@@ -348,42 +356,106 @@ def grade_master():
             os.remove(temp_path)
 
 
+jobs = {}          # 채점 작업 진행 상황 (job_id -> dict)
+jobs_lock = threading.Lock()
+
+
+def _grade_files(saved, ex, keys, thr, job=None):
+    """saved: [(임시경로, 표시용 파일명)]. 판독은 전체 잠금 밖에서, 결과 저장만 짧게 잠금. job 이 있으면 진행 상황을 갱신."""
+    new_results, errors = [], []
+    for temp_path, shown in saved:
+        try:
+            pages = load_pages_from_file(temp_path)
+            if job is not None:
+                with jobs_lock:
+                    job["current"] = shown
+                    job["total"] += max(0, len(pages) - 1) if pages else 0      # 파일 1개로 잡아둔 칸을 페이지 수로 확장
+            if not pages:
+                errors.append(f"{shown}: 이미지를 읽을 수 없습니다.")
+                if job is not None:
+                    with jobs_lock:
+                        job["done"] += 1
+            for label, img_bgr in pages:
+                res = grade_image(img_bgr, ex, keys, thr)
+                with lock:
+                    item = make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys)
+                    graded_results.append(item)
+                    store.add_results([item])
+                    new_results.append(item)
+                if job is not None:
+                    with jobs_lock:
+                        job["done"] += 1
+        except Exception as e:
+            errors.append(f"{shown}: {e}")
+            if job is not None:
+                with jobs_lock:
+                    job["done"] += 1
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    return new_results, errors
+
+
+def _run_job(job, saved, ex, keys, thr):
+    try:
+        new_results, errors = _grade_files(saved, ex, keys, thr, job)
+        with jobs_lock:
+            job["errors"] = errors
+            job["n_results"] = len(new_results)
+            job["status"] = "done"
+    except Exception as e:
+        with jobs_lock:
+            job["errors"] = [str(e)]
+            job["status"] = "done"
+
+
 @app.route("/api/grade/students", methods=["POST"])
 def grade_students():
     files = request.files.getlist("files")
     if not files:
         return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
-
-    new_results, errors = [], []
     ex, keys, thr = snapshot()
-    for file in files:
-        shown = display_name(file)
-        temp_path = save_upload(file)
-        try:
-            pages = load_pages_from_file(temp_path)
-            if not pages:
-                errors.append(f"{shown}: 이미지를 읽을 수 없습니다.")
-            for label, img_bgr in pages:
-                res = grade_image(img_bgr, ex, keys, thr)       # 판독(오래 걸림)은 전체 잠금 밖에서
-                with lock:                                      # 결과 만들기/저장만 짧게 잠금
-                    # 페이지 라벨은 임시파일명이므로 원래 파일명으로 교체
-                    new_results.append(make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys))
-        except Exception as e:
-            errors.append(f"{shown}: {e}")
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    with lock:
-        graded_results.extend(new_results)
-        store.add_results(new_results)
+    saved = [(save_upload(f), display_name(f)) for f in files]
+    if request.form.get("async") == "1":
+        # 업로드 직후 바로 돌려주고 채점은 뒤에서 진행 -> 화면이 /api/grade/progress/<id> 로 진행 상황을 확인
+        job_id = uuid.uuid4().hex[:12]
+        job = {"status": "running", "total": len(saved), "done": 0, "current": "", "errors": [], "n_results": 0, "t": time.time()}
+        with jobs_lock:
+            for k in [k for k, v in jobs.items() if time.time() - v["t"] > 3600]:
+                jobs.pop(k, None)
+            jobs[job_id] = job
+        threading.Thread(target=_run_job, args=(job, saved, ex, keys, thr), daemon=True).start()
+        return jsonify({"status": "started", "job": job_id, "total": len(saved)})
+    new_results, errors = _grade_files(saved, ex, keys, thr)
     return jsonify({"status": "success", "results": [with_judge(r) for r in new_results], "errors": errors})
+
+
+@app.route("/api/grade/progress/<job_id>")
+def grade_progress(job_id):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return jsonify({"status": "error", "message": "작업을 찾을 수 없습니다."}), 404
+        return jsonify({k: job[k] for k in ("status", "total", "done", "current", "errors", "n_results")})
+
+
+@app.route("/api/results/<int:rid>/name", methods=["POST"])
+def set_result_name(rid):
+    """응시자 이름 입력/수정 (손글씨 이름은 자동 인식이 안 되므로 사진을 보고 입력)."""
+    name = str((request.get_json(silent=True) or {}).get("name", "")).strip()[:40]
+    with lock:
+        for r in graded_results:
+            if r["id"] == rid:
+                r["name"] = name
+                store.update_result(r)
+                return jsonify({"status": "success", "name": name})
+    return jsonify({"status": "error", "message": "결과를 찾을 수 없습니다."}), 404
 
 
 def with_judge(item):
     sc = scaled(item)
     status, fails = judge(sc)
-    return {**sc, "average": round(sc["total_score"] / exam_mod.n_subjects(state["exam"]), 1), "result": status, "fail_subjects": fails}
+    return {**sc, "exam_title": state["exam"].get("title") or state["exam"]["name"], "average": round(sc["total_score"] / exam_mod.n_subjects(state["exam"]), 1), "result": status, "fail_subjects": fails}
 
 
 @app.route("/api/results", methods=["GET", "DELETE"])
@@ -410,10 +482,7 @@ def delete_selected():
     ids = {int(x) for x in (request.get_json(silent=True) or {}).get("ids", [])}
     with lock:
         gone = [r for r in graded_results if r["id"] in ids]
-        for r in gone:
-            p = os.path.join(RESULT_DIR, os.path.basename(r.get("vis_url", "")))
-            if os.path.isfile(p):
-                os.remove(p)
+        remove_result_files(gone)
         graded_results = [r for r in graded_results if r["id"] not in ids]
         store.delete_results(ids=[r["id"] for r in gone])
     return jsonify({"status": "success", "deleted": len(gone)})
