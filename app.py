@@ -70,6 +70,7 @@ def new_state(exam):
         "exam": exam,
         "answer_keys": exam_mod.default_keys(exam),
         "keys_set": {f: False for f in exam["forms"]},   # 실제로 등록된 정답인지(임시값 구분)
+        "key_source": {},             # 정답을 어떻게 등록했는지: sheet(정답 답안지)/excel/derived(다른 유형에서 자동 생성)
         "score_per_q": 5.0,           # 문항당 배점 (기본 시험: 20문항 x 5점 = 과목 100점)
         "pass_average": 60.0,         # 합격 평균: 과락이 없고 과목 점수 평균(총점/과목 수)이 이 점수 이상이면 합격
         "subject_fail_cutoff": 40.0,  # 과락 점수: 한 과목이라도 이 점수 미만이면 과락(0=사용 안 함)
@@ -112,6 +113,7 @@ def upgrade_state(st):
         st["exam"] = exam_mod.default_exam()
     ex = st["exam"]
     st.setdefault("keys_set", {})
+    st.setdefault("key_source", {})
     defaults = exam_mod.default_keys(ex)
     for f in ex["forms"]:
         st["answer_keys"].setdefault(f, defaults[f])
@@ -184,7 +186,7 @@ def current_conflicts():
     return []
 
 
-def register_key(form, key):
+def register_key(form, key, source="sheet"):
     """정답 등록. 대응 규칙이 있고 다른 유형이 미등록이면 자동 생성하고, 이미 등록돼 있으면 서로 일치하는지 검사."""
     ex = state["exam"]
     n_q = exam_mod.total_questions(ex)
@@ -195,12 +197,14 @@ def register_key(form, key):
         raise ValueError(f"정답은 {n_q}문항 모두 1~{ex['choices']} 사이 숫자여야 합니다.")
     state["answer_keys"][form] = key[:n_q]
     state["keys_set"][form] = True
+    state.setdefault("key_source", {})[form] = source
     derived = False
     if ex["form_rule"] == "half_swap" and len(ex["forms"]) == 2:
         other = [f for f in ex["forms"] if f != form][0]
         if not state["keys_set"][other]:
             state["answer_keys"][other] = exam_mod.derive_key(ex, state["answer_keys"][form])
             state["keys_set"][other] = True
+            state["key_source"][other] = "derived"
             derived = True
     return {"derived_other": derived, "conflicts": current_conflicts()}
 
@@ -293,12 +297,17 @@ def handle_config():
         if request.method == "GET":
             return jsonify({**state, "key_conflicts": current_conflicts(), "exam_info": exam_info()})
         data = request.get_json(force=True) or {}
+        if data.get("reset"):
+            # 시험지 새로 설정 저장: 기존 정답 등록을 모두 지우고(미등록 상태) 아래 값으로 새로 설정한다. 이미 채점된 결과는 그대로 둔다.
+            state["answer_keys"] = exam_mod.default_keys(state["exam"])
+            state["keys_set"] = {f: False for f in state["exam"]["forms"]}
+            state["key_source"] = {}
         try:
             if "answer_keys" in data:
                 keys = data["answer_keys"]
                 forms = [f for f in exam_forms() if f in keys]
                 for t in forms:
-                    register_key(t, keys[t])
+                    register_key(t, keys[t], "excel")
                 if len(forms) == 2:     # 둘 다 직접 준 경우에는 자동 생성 없이 입력값 그대로
                     n_q = exam_mod.total_questions(state["exam"])
                     for t in forms:
@@ -329,8 +338,14 @@ def grade_master():
         _, img_bgr = pages[0]
         ex, keys, thr = snapshot()
         res = grade_image(img_bgr, ex, keys, thr)
+        slot = request.form.get("form", "").strip()          # 화면에서 'A형 칸/B형 칸' 중 어디에 올렸는지
+        if slot and slot not in ex["forms"]:
+            return jsonify({"status": "error", "message": f"이 시험에 없는 문제 유형입니다: {slot}"}), 400
+        if slot and res["type_status"] == "정상" and res["exam_type"] != slot:
+            return jsonify({"status": "error", "message": f"{slot}형 칸에 올렸지만 이 답안지는 문제 유형이 {res['exam_type']}형으로 표시되어 있습니다. "
+                                                          f"{res['exam_type']}형 칸에 올리거나, 답안지의 문제 유형 표시를 확인하세요."}), 422
         with lock:
-            t_code = res["exam_type"]
+            t_code = slot or res["exam_type"]
             extracted, problems = [], []
             for q in range(1, exam_mod.total_questions(ex) + 1):
                 ans = res["student_answers"].get(q, "무표기")
@@ -343,7 +358,7 @@ def grade_master():
                 return jsonify({"status": "error",
                                 "message": f"인식 실패 문항이 {len(problems)}개입니다. 스캔 품질/민감도를 확인하세요."}), 422
             try:
-                info = register_key(t_code, extracted)
+                info = register_key(t_code, extracted, "sheet")
             except ValueError as e:
                 return jsonify({"status": "error", "message": str(e)}), 422
             save_state()
@@ -774,6 +789,7 @@ def update_exam(eid):
         if structural:       # 구조가 바뀌면 정답은 새 구조의 임시값으로 초기화
             st["answer_keys"] = exam_mod.default_keys(e)
             st["keys_set"] = {f: False for f in e["forms"]}
+            st["key_source"] = {}
         for x in registry["list"]:
             if x["id"] == eid:
                 x["name"] = e["name"]

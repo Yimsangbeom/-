@@ -169,13 +169,13 @@ class OMREngine:
             return resized
         return cv2.warpPerspective(resized, H, (self.cw, self.ch), borderValue=(255, 255, 255))
 
-    def get_bubble_ratio(self, binary_img, cx, cy, r):
+    def get_bubble_ratio(self, binary_img, cx, cy, r, scale=1.0):
         x1, y1 = max(0, int(cx - r)), max(0, int(cy - r))
         x2, y2 = min(self.cw, int(cx + r)), min(self.ch, int(cy + r))
         roi = binary_img[y1:y2, x1:x2]
         if roi.size == 0: return 0.0
         mask = np.zeros(roi.shape, dtype=np.uint8)
-        cv2.circle(mask, (int(cx - x1), int(cy - y1)), r - 2, 255, -1)
+        cv2.circle(mask, (int(cx - x1), int(cy - y1)), max(2, int(round((r - 2) * scale))), 255, -1)
         total_pixels = cv2.countNonZero(mask)
         if total_pixels == 0: return 0.0
         red = getattr(self, '_red', None)
@@ -188,12 +188,34 @@ class OMREngine:
             total_pixels = left
         return cv2.countNonZero(cv2.bitwise_and(roi, roi, mask=mask)) / float(total_pixels)
 
-    def pick_marked(self, ratios, th):
+    def scores(self, binary, pts, r):
+        """한 줄의 각 칸에 대해 (원 전체 잉크 비율, 가운데 부분 잉크 비율)."""
+        return [(self.get_bubble_ratio(binary, cx, cy, r), self.get_bubble_ratio(binary, cx, cy, r, 0.64)) for cx, cy in pts]
+
+    @staticmethod
+    def baselines(rows):
+        """여러 줄(문항들)의 같은 번호 칸끼리 가운데 비율의 중앙값 = 그 칸의 '빈 칸일 때' 값. 숫자 모양(예: 4)마다 인쇄 잉크가 달라서 필요하다."""
+        if not rows:
+            return None
+        n = len(rows[0])
+        return [float(np.median([r[i][1] for r in rows])) for i in range(n)]
+
+    def pick_marked(self, ratios, th, base_inner=None):
         """한 줄(문항/수험번호 한 자리/유형)에서 마킹된 칸의 인덱스.
-        절대 기준(th) 이상이면서, 같은 줄의 가장 빈 칸보다 0.25 이상 진해야 마킹으로 인정한다.
-        (인쇄된 숫자·원 테두리 때문에 빈 칸도 스캔에서는 0.3~0.55가 나오므로 이중 조건 사용)"""
-        base = min(ratios)
-        return [i for i, v in enumerate(ratios) if v >= th and v >= base + 0.25]
+        ratios 원소는 숫자(원 전체 비율) 또는 (전체, 가운데) 쌍.
+        1) 원 전체 비율이 th 이상이면서 같은 줄의 가장 빈 칸보다 0.25 이상 진하면 마킹.
+        2) 원을 꽉 채우지 않고 '가운데만' 칠한 경우도 인식(base_inner 가 있을 때): 가운데 비율이 (th-0.15, 최소 0.45) 이상이면서
+           그 번호 칸의 빈 칸 기준값(base_inner)보다 0.22 이상, 같은 줄의 가장 빈 칸보다 0.2 이상 진하면 마킹.
+        (인쇄된 숫자·원 테두리 때문에 빈 칸도 스캔에서는 전체 0.3~0.55, 가운데 0.2~0.6이 나오므로 이중 조건 사용)"""
+        if not ratios:
+            return []
+        full = [v[0] if isinstance(v, tuple) else v for v in ratios]
+        base = min(full)
+        out = [i for i, v in enumerate(full) if v >= th and v >= base + 0.25]
+        if base_inner is not None and isinstance(ratios[0], tuple):
+            ith, row_min = max(0.45, th - 0.15), min(v[1] for v in ratios)       # 줄 전체가 진한 경우(인쇄선 등)는 제외
+            out = sorted(set(out) | {i for i, v in enumerate(ratios) if v[1] >= ith and v[1] >= base_inner[i] + 0.22 and v[1] >= row_min + 0.2})
+        return out
 
     def grade_sheet(self, img_bgr, answer_key_dict, score_per_q=1.0, exam=None):
         """exam: 시험 설정(exam.py). 없으면 기본 시험(5과목x20문항, 선택지 5, 수험번호 9자리, A/B형)."""
@@ -215,7 +237,7 @@ class OMREngine:
         forms = [f for f in exam['forms'] if f in self.cfg['type_bubbles']]
         if len(exam['forms']) == 1 or len(forms) < len(exam['forms']):     # 유형이 하나(또는 양식에 표시칸이 없음)면 그 유형
             forms = [exam['forms'][0]]
-        type_ratios = [self.get_bubble_ratio(binary, *self.cfg['type_bubbles'][k], r) for k in forms] if len(forms) > 1 else []
+        type_ratios = self.scores(binary, [self.cfg['type_bubbles'][k] for k in forms], r) if len(forms) > 1 else []
         marked_types = [forms[i] for i in self.pick_marked(type_ratios, th)] if len(forms) > 1 else []
         if len(forms) == 1:                      # 유형이 하나면 표시 여부와 관계없이 그 유형
             exam_type, type_status = forms[0], '정상'
@@ -231,9 +253,10 @@ class OMREngine:
 
         id_x_cols, id_y_rows = self.cfg['id_grid']['x_cols'][:exam['id_digits']], self.cfg['id_grid']['y_rows']
         student_id_chars, id_warnings = [], 0
-        for cx in id_x_cols:
-            col_ratios = [self.get_bubble_ratio(binary, cx, cy, r) for cy in id_y_rows]
-            col_marked = [(d, cx, id_y_rows[d]) for d in self.pick_marked(col_ratios, th)]
+        id_cols = [self.scores(binary, [(cx, cy) for cy in id_y_rows], r) for cx in id_x_cols]
+        id_base = self.baselines(id_cols) if len(id_cols) >= 5 else None
+        for cx, col_ratios in zip(id_x_cols, id_cols):
+            col_marked = [(d, cx, id_y_rows[d]) for d in self.pick_marked(col_ratios, th, id_base)]
             if len(col_marked) == 1:
                 student_id_chars.append(str(col_marked[0][0]))
                 cv2.circle(vis_img, (int(col_marked[0][1]), int(col_marked[0][2])), r + 2, (255, 120, 0), 2)
@@ -250,12 +273,14 @@ class OMREngine:
         student_answers, subject_scores = {}, {c: 0.0 for c in codes}
         multi_count, blank_count, correct_count = 0, 0, 0
 
+        all_rows = [self.scores(binary, self.qpos[i][:n_ch], r) for i in range(n_q)]
+        q_base = self.baselines(all_rows) if n_q >= 10 else None
         for q_num in range(1, n_q + 1):
             centers = self.qpos[q_num - 1][:n_ch]
             code = codes[exam_mod.subject_index(exam, q_num)]
             correct_choice = int(ans_key[q_num - 1]) if q_num - 1 < len(ans_key) else 1
-            row_ratios = [self.get_bubble_ratio(binary, cx, cy, r) for cx, cy in centers]
-            marked = [(c_i + 1, centers[c_i][0], centers[c_i][1]) for c_i in self.pick_marked(row_ratios, th)]
+            row_ratios = all_rows[q_num - 1]
+            marked = [(c_i + 1, centers[c_i][0], centers[c_i][1]) for c_i in self.pick_marked(row_ratios, th, q_base)]
             if len(marked) == 1:
                 chosen, m_cx, m_cy = marked[0]
                 student_answers[q_num] = str(chosen)
@@ -287,7 +312,7 @@ class OMREngine:
         total_score = sum(subject_scores.values())
         needs_review = (type_status != '정상') or (id_warnings > 0) or (multi_count > 0) or (blank_count > 0)
         return {
-            'exam_type': exam_type, 'student_id': student_id, 'student_answers': student_answers,
+            'exam_type': exam_type, 'type_status': type_status, 'student_id': student_id, 'student_answers': student_answers,
             'subject_scores': subject_scores, 'total_score': total_score, 'correct_count': correct_count,
             'multi_count': multi_count, 'blank_count': blank_count, 'needs_review': needs_review, 'vis_img': vis_img, 'name_img': name_img
         }

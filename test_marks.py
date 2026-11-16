@@ -51,16 +51,22 @@ black(7, key[6]); red_fill(img, *pos(7, key[6] % 5 + 1))
 black(8, key[7]); red_check(img, *pos(8, key[7]))
 # 9: 검정 두 개 + 다른 하나에 빨간 표시 -> 이중마킹
 black(9, 1); black(9, 3); red_fill(img, *pos(9, 5))
-# 10~: 아무 표시 없음 -> 무표기
+# 10~12: 원을 꽉 채우지 않고 가운데만 표시(작은 점 / 세로 낙서) -> 정답으로 인식
+def dot(q, c, rad):
+    x, y = pos(q, c); cv2.circle(img, (int(x), int(y)), rad, (40, 40, 40), -1, cv2.LINE_AA)
+dot(10, key[9], 4); dot(11, key[10], 5)
+x, y = pos(12, key[11])
+for dx in (-3, 0, 3): cv2.line(img, (int(x + dx), int(y - 5)), (int(x + dx), int(y + 5)), (40, 40, 40), 2, cv2.LINE_AA)
+# 13~: 아무 표시 없음 -> 무표기
 
 scanned, _ = scan(img, rng, rot=0.8, shift=(10, -8), persp=2, blur=0.8, q=72)     # JPEG 72 로 압축: 빨강/검정 경계 번짐 포함
 eng = OMREngine(C)
 res = eng.grade_sheet(scanned, {"A": key, "B": key}, 1.0)
 a = res["student_answers"]
-exp = {1: str(key[0]), 2: "무표기", 3: "이중", 4: "이중", 5: str(wrong5), 6: str(key[5]), 7: str(key[6]), 8: str(key[7]), 9: "이중"}
+exp = {1: str(key[0]), 2: "무표기", 3: "이중", 4: "이중", 5: str(wrong5), 6: str(key[5]), 7: str(key[6]), 8: str(key[7]), 9: "이중", 10: str(key[9]), 11: str(key[10]), 12: str(key[11]), 13: "무표기"}
 bad = {q: (a[q], v) for q, v in exp.items() if a[q] != v}
 print("판독:", {q: a[q] for q in range(1, 11)})
 assert not bad, f"기대와 다른 문항(문항: (판독, 기대)): {bad}"
-assert res["correct_count"] == 4, res["correct_count"]          # 1, 6, 7, 8 번만 정답. 이중마킹(3, 4, 9)은 정답 포함이어도 오답
-assert res["multi_count"] == 3 and res["blank_count"] == 92 and res["needs_review"]
+assert res["correct_count"] == 7, res["correct_count"]          # 1, 6, 7, 8 번만 정답. 이중마킹(3, 4, 9)은 정답 포함이어도 오답
+assert res["multi_count"] == 3 and res["blank_count"] == 89 and res["needs_review"]
 print("ALL PASS")
