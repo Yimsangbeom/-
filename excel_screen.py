@@ -116,7 +116,7 @@ def add_screen_sheet(wb, exam, st, st_scope, tmax, pass_average, cut, images, fi
         r = section(f'블록 정답률 비교 (같은 문제를 앞/뒤에서 풀었을 때, {b0["form_a"]}형 번호 기준)', r)
         r = table(["과목", "번호", f'{b0["form_a"]}형 응시자 정답률', f'{b0["form_b"]}형 응시자 정답률', "차이 (%p)"], [5, 3, 3, 3, 4],
                   [(b["subject_name"], b["block"], f'{b["a_rate"]}%', f'{b["b_rate"]}%', b["diff"]) for b in st["blocks"]], r)
-    put(r, 1, "문항 분석(문항별 정답률, 선택지 비율, 변별도, 정답키 확인)은 '문항분석_*' 시트에 있습니다. 변별도: 상위 27% 정답률 - 하위 27% 정답률 (0.3 이상 좋음, 음수는 검토). KR-20: 0.8 이상 양호.",
+    put(r, 1, "문항 분석(문항별 정답률, 선택지 비율, 변별도, 정답키 확인)은 '문항분석_*' 시트에 있습니다. 변별도: 상위 27% 정답률 - 하위 27% 정답률 (0.3 이상 좋음, 0.2 미만 '변별도 낮음', 음수는 '역변별' = 점수 낮은 응시자가 더 많이 맞힌 문항). KR-20: 0.8 이상 양호.",
         NC, False, 9, "64748B", align="left", border=False)
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
