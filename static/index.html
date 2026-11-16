@@ -589,13 +589,15 @@
       return `<span title="${esc(item.type_note || '')}" class="cursor-help">${esc(item.exam_type)}<span class="block text-[11px] text-red-600 font-bold whitespace-nowrap">유형확인 (${from})</span></span>`;
     }
     function personCell(item, small) {
-      const label = (item.name && item.name_src !== '명단') ? `<span class="font-bold">${esc(item.name)}</span>`
-        : (item.name_url ? `<img src="${item.name_url}" class="${small ? 'h-6 max-w-[76px]' : 'h-8 max-w-[150px]'} object-contain inline-block border rounded bg-white" alt="이름 칸">` : '<span class="text-slate-400">-</span>');
-      return `<span class="cursor-pointer" title="클릭하여 이름을 입력하세요 (입력한 이름을 지우면 사진으로 되돌아갑니다)" onclick="editName(${item.id})">${label}</span>`;
+      // 화면에는 항상 이름 칸 사진을 보여 준다(입력한 이름/명단의 이름은 글자로 바꾸지 않고, 마우스를 올리면 보이며 엑셀에 글자로 들어간다)
+      const label = item.name_url ? `<img src="${item.name_url}" class="${small ? 'h-6 max-w-[76px]' : 'h-8 max-w-[150px]'} object-contain inline-block border rounded bg-white" alt="이름 칸">`
+        : (item.name ? `<span class="font-bold">${esc(item.name)}</span>` : '<span class="text-slate-400">-</span>');
+      const tip = item.name ? `이름: ${item.name}${item.name_src === '명단' ? ' (명단)' : ''} - 클릭하여 수정 (지우면 입력한 이름이 없어집니다)` : '클릭하여 이름을 입력하세요 (입력한 이름은 엑셀에 글자로 들어갑니다)';
+      return `<span class="cursor-pointer" title="${esc(tip)}" onclick="editName(${item.id})">${label}</span>`;
     }
     async function editName(id) {
       const it = gradedList.find(x => x.id === id); if (!it) return;
-      const v = prompt('이름을 입력하세요 (이름 칸 손글씨는 자동 인식이 안 되어 사진을 보고 입력합니다)\n입력한 이름을 지우고 확인을 누르면 이름 사진으로 되돌아갑니다.', it.name || '');
+      const v = prompt('이름을 입력하세요 (이름 칸 손글씨는 자동 인식이 안 되어 사진을 보고 입력합니다)\n입력한 이름은 엑셀에 글자로 들어가고, 화면에는 이름 사진이 그대로 보입니다. 이름을 지우고 확인을 누르면 입력한 이름이 없어집니다.', it.name || '');
       if (v === null) return;
       const r = await (await fetch('/api/results/' + id + '/name', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ name: v }) })).json();
       if (r.status === 'success') { it.name = r.name; refreshResults(); }
