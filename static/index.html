@@ -32,7 +32,7 @@
       <h1 class="text-xl font-bold">OCR_자동 채점 프로그램</h1>
       <p id="hdr-sub" class="text-xs text-blue-200">ocr.ehancom.com</p>
     </div>
-    <div class="flex items-center gap-2"><span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span><button onclick="openPwDialog()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">아이디/비밀번호 변경</button> <button onclick="logout()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">로그아웃</button></div>
+    <div class="flex items-center gap-2"><span class="bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Server Connected</span><span id="hdr-user" class="text-xs text-blue-100 px-1"></span><button id="btn-users" onclick="openUsers()" class="hidden bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">사용자 관리</button><button onclick="openPwDialog()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">아이디/비밀번호 변경</button> <button onclick="logout()" class="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-semibold">로그아웃</button></div>
   </header>
 
   <div class="no-print bg-white border-b px-6 flex gap-2 pt-2">
@@ -239,8 +239,27 @@
     </div>
   </dialog>
 
+  <dialog id="users-dlg" class="rounded-xl p-0 shadow-xl border w-[min(760px,96vw)] max-h-[90vh] overflow-hidden">
+    <div class="flex flex-col max-h-[90vh]">
+      <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50"><b>사용자 관리</b><button onclick="document.getElementById('users-dlg').close()" class="text-slate-500 hover:text-slate-800 font-bold px-3 py-1">닫기</button></div>
+      <div class="p-5 overflow-auto">
+        <table class="w-full text-sm text-left border-collapse"><thead class="bg-slate-100"><tr><th class="p-2 border">아이디</th><th class="p-2 border">권한</th><th class="p-2 border">등록일</th><th class="p-2 border w-44">관리</th></tr></thead><tbody id="users-tbody"></tbody></table>
+        <div class="text-xs text-slate-500 mt-2"><b>관리자</b>: 모든 기능 + 사용자 관리 / <b>일반 사용자</b>: 채점·교정·결과 조회·엑셀 사용 / <b>조회 전용</b>: 결과·통계 보기와 엑셀 다운로드만 가능 (변경 불가). 기본 관리자(hancom)는 삭제할 수 없습니다.</div>
+        <div class="mt-4 border-t pt-4">
+          <div class="font-bold text-sm mb-2">사용자 추가</div>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <input id="nu-name" placeholder="아이디 (영문/숫자 3자 이상)" class="border rounded px-3 py-2 text-sm" autocomplete="off">
+            <input id="nu-pw" type="text" placeholder="비밀번호 (8자 이상)" class="border rounded px-3 py-2 text-sm" autocomplete="off">
+            <select id="nu-role" class="border rounded px-3 py-2 text-sm font-bold"><option value="user">일반 사용자</option><option value="viewer">조회 전용</option><option value="admin">관리자</option></select>
+            <button onclick="addUser()" class="bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg text-sm py-2">추가</button>
+          </div>
+          <div id="nu-msg" class="text-xs text-red-600 min-h-[16px] mt-1"></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
   <dialog id="pw-dlg" class="rounded-xl p-6 shadow-xl border w-80">
-    <h3 class="font-bold mb-3">아이디 / 비밀번호 변경</h3>
+    <h3 class="font-bold mb-3">내 아이디 / 비밀번호 변경</h3>
     <input id="pw-user" placeholder="아이디" class="border rounded px-3 py-2 w-full mb-2" autocomplete="username">
     <input id="pw-cur" type="password" placeholder="현재 비밀번호" class="border rounded px-3 py-2 w-full mb-2" autocomplete="current-password">
     <input id="pw-new" type="password" placeholder="새 비밀번호 (8자 이상)" class="border rounded px-3 py-2 w-full mb-2" autocomplete="new-password">
@@ -274,8 +293,49 @@
     // 세션 만료(401) 시 로그인 화면으로 이동
     const _fetch = window.fetch;
     window.fetch = async (...a) => { const r = await _fetch(...a); if (r.status === 401) location.href = '/login'; return r; };
+    let me = { role: 'admin', username: '', primary: true };
+    async function loadMe() {
+      try { me = await (await fetch('/api/auth/status')).json(); } catch (e) { return; }
+      document.getElementById('hdr-user').innerText = `${me.username || ''} (${me.role_name || ''})`;
+      document.getElementById('btn-users').classList.toggle('hidden', me.role !== 'admin');
+      if (me.role === 'viewer') applyViewer();
+    }
+    // 조회 전용 계정: 변경 기능 버튼/입력을 숨긴다 (서버도 변경 요청을 막는다)
+    function applyViewer() {
+      const bad = /saveNewConfig|openExamDialog|runTest|clearTest|deleteRoster|deleteSelected|regrade|openEditor|deleteAllResults|saveConfig/;
+      document.querySelectorAll('button[onclick]').forEach(b => { if (bad.test(b.getAttribute('onclick'))) b.classList.add('hidden'); });
+      document.querySelectorAll('input[type=file]').forEach(i => { const l = i.closest('label'); if (l) l.classList.add('hidden'); });
+      ['cfg-score', 'cfg-passavg', 'cfg-subfail', 'cfg-th'].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = true; });
+      document.querySelectorAll('#tab-grade .space-y-6 > div:first-child, #test-card').forEach(e => e.classList.add('hidden'));
+    }
+    async function openUsers() { await loadUsers(); document.getElementById('users-dlg').showModal(); }
+    async function loadUsers() {
+      const d = await (await fetch('/api/users')).json();
+      document.getElementById('users-tbody').innerHTML = (d.users || []).map(u => `<tr class="border-b"><td class="p-2 font-mono font-bold">${esc(u.username)}${u.primary ? ' <span class="text-xs text-blue-700">(기본)</span>' : ''}${u.username === me.username ? ' <span class="text-xs text-slate-400">(나)</span>' : ''}</td>`
+        + `<td class="p-2">${u.primary ? esc(u.role_name) : `<select onchange="setRole('${esc(u.username)}', this.value)" class="border rounded px-1 py-1 text-xs">${Object.entries(d.roles).map(([k, v]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${v}</option>`).join('')}</select>`}</td>`
+        + `<td class="p-2 text-xs text-slate-500">${esc(u.created || '')}</td>`
+        + `<td class="p-2">${u.primary ? '<span class="text-xs text-slate-400">[아이디/비밀번호 변경] 사용</span>' : `<button onclick="resetUserPw('${esc(u.username)}')" class="text-xs border rounded px-2 py-1 mr-1 hover:bg-slate-100">비밀번호 재설정</button>` + (u.username === me.username ? '' : `<button onclick="delUser('${esc(u.username)}')" class="text-xs border border-red-300 text-red-600 rounded px-2 py-1 hover:bg-red-50">삭제</button>`)}</td></tr>`).join('');
+    }
+    async function addUser() {
+      const m = document.getElementById('nu-msg'), v = id => document.getElementById(id).value;
+      const r = await (await fetch('/api/users', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: v('nu-name').trim(), password: v('nu-pw'), role: v('nu-role') }) })).json();
+      if (r.status === 'success') { document.getElementById('nu-name').value = ''; document.getElementById('nu-pw').value = ''; m.innerText = ''; loadUsers(); } else m.innerText = r.message;
+    }
+    async function delUser(n) {
+      if (!confirm(`사용자 '${n}'을(를) 삭제합니다. 이 사용자는 바로 로그아웃되고 다시 로그인할 수 없습니다.\n계속할까요?`)) return;
+      const r = await (await fetch('/api/users/' + encodeURIComponent(n), { method: 'DELETE' })).json(); if (r.status !== 'success') alert(r.message); loadUsers();
+    }
+    async function resetUserPw(n) {
+      const pw = prompt(`'${n}'의 새 비밀번호를 입력하세요 (8자 이상). 이 사용자의 기존 로그인은 모두 해제됩니다.`); if (pw === null) return;
+      const r = await (await fetch('/api/users/' + encodeURIComponent(n) + '/password', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ new: pw }) })).json();
+      alert(r.status === 'success' ? `'${n}'의 비밀번호를 바꿨습니다. 새 비밀번호를 그 사용자에게 전달하세요.` : r.message);
+    }
+    async function setRole(n, role) {
+      const r = await (await fetch('/api/users/' + encodeURIComponent(n) + '/role', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ role }) })).json();
+      if (r.status !== 'success') alert(r.message); loadUsers();
+    }
     async function openPwDialog() {
-      try { const s = await (await fetch('/api/auth/status')).json(); document.getElementById('pw-user').value = s.username || ''; } catch (e) {}
+      try { const s = await (await fetch('/api/auth/status')).json(); const u = document.getElementById('pw-user'); u.value = s.username || ''; u.readOnly = !s.primary; u.classList.toggle('bg-slate-100', !s.primary); } catch (e) {}
       document.getElementById('pw-dlg').showModal();
     }
     async function changePassword() {
@@ -1150,7 +1210,7 @@
       await loadExams();
     }
 
-    loadConfig().then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); loadRoster(); });
+    loadMe().then(() => loadConfig()).then(() => { refreshResults(); loadTestInfo(); loadSystemInfo(); loadRoster(); setTimeout(() => { if (me.role === 'viewer') applyViewer(); }, 300); });
   </script>
 </body>
 </html>

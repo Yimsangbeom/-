@@ -47,7 +47,7 @@ if __name__ == '__main__':
     key = [random.randint(1, 5) for _ in range(100)]
     c = app.test_client()
     # 인증: 미설정 상태 → 프록시 경유 설정 거부 → 로컬 직접 설정 → 로그인/변경/잠금
-    assert c.get('/api/auth/status').get_json() == {'configured': False, 'setup_allowed': True, 'logged_in': False, 'username': None}
+    assert c.get('/api/auth/status').get_json() == {'configured': False, 'setup_allowed': True, 'logged_in': False, 'username': None, 'role': None, 'role_name': None}
     assert c.get('/').status_code == 302 and c.get('/api/results').status_code == 401
     ext = {'X-Real-IP': '1.2.3.4'}
     assert c.get('/api/auth/status', headers=ext).get_json()['setup_allowed'] is False
