@@ -746,11 +746,16 @@
     function fmDup() { const c = {}; fm.pairs.forEach(p => c[p.b] = (c[p.b] || 0) + 1); return c; }
     function fmPermOk(p) { return p.perm.length === fm.ch && [...p.perm].sort((x, y) => x - y).every((v, i) => v === i + 1); }
     function renderFormMap() {
-      const dup = fmDup(), only = document.getElementById('fm-only').checked; let bad = 0, rows = '';
+      const dup = fmDup(), only = document.getElementById('fm-only').checked, rg = EI().ranges || []; let bad = 0, rows = '', lastSub = null;
       fm.pairs.forEach(p => {
         const isDup = dup[p.b] > 1, low = p.score != null && p.score < 0.55, pc = !p.perm.every((v, i) => v === i + 1), pbad = !fmPermOk(p);
         if (isDup || pbad) bad++;
         if (only && !(isDup || low || pc || pbad)) return;
+        const sub = rg.find(x => p.a >= x.start && p.a <= x.end);
+        if (sub && sub.code !== lastSub) {          // 과목이 바뀌면 구분 줄
+          lastSub = sub.code;
+          rows += `<tr><td colspan="6" class="px-3 py-2 bg-blue-900 text-white font-bold text-sm">${esc(sub.code)}. ${esc(sub.name)} <span class="text-blue-200 font-normal text-xs">(${esc(fm.forms[0])}형 ${sub.start}~${sub.end}번 ↔ ${esc(fm.forms[1])}형 같은 과목)</span></td></tr>`;
+        }
         const g = fm.groups ? fm.groups[p.a - 1] : null, opts = Array.from({ length: fm.n }, (_, i) => i + 1).filter(b => g === null || fm.groups[b - 1] === g || b === p.b).map(b => `<option value="${b}" ${b === p.b ? 'selected' : ''}>${b}번</option>`).join('');
         rows += `<tr class="border-b ${isDup || pbad ? 'bg-red-50' : (low ? 'bg-amber-50' : '')}"><td class="p-1.5 border text-center font-bold">${p.a}</td><td class="p-1.5 border">${esc(fm.aT[p.a - 1] || '')}</td>
           <td class="p-1.5 border text-center"><select onchange="setFmB(${p.a}, +this.value)" class="border rounded px-1 py-0.5 ${isDup ? 'border-red-500 text-red-600 font-bold' : ''}">${opts}</select></td><td class="p-1.5 border">${esc(fm.bT[p.b - 1] || '')}</td>
