@@ -609,7 +609,7 @@
       const bad = (item.fail_subjects || []).includes(code);
       return `<td class="p-2 ${bad ? 'text-red-600 font-bold bg-red-50' : ''}">${item.subject_scores[code]}</td>`;
     }
-    let resultScope = null, resultView = 'list', itemForm = 0, itemSort = 'q', lastStats = null;
+    let resultScope = null, resultView = 'list', itemForm = 0, itemSort = 'q', itemSubj = '', lastStats = null;
     const isTest = x => !!x.is_test;
     const selectedIds = new Set();
     function updateSelUI() {
@@ -996,6 +996,8 @@
       // 문항 분석
       h += `<div class="bg-white border rounded-xl p-5"><div class="flex flex-wrap items-center gap-3 mb-3"><h3 class="font-bold">문항 분석</h3>
         <select id="item-form" onchange="itemForm = +this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm">${d.forms.map((f, i) => `<option value="${i}" ${i === itemForm ? 'selected' : ''}>${esc(f.label)} (${f.n}명)</option>`).join('')}</select>
+        <select id="item-subj" onchange="itemSubj = this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm" title="과목별로 문항 보기">
+          <option value="">전체 과목</option>${d.subjects.map(x => `<option value="${esc(x.code)}" ${x.code === itemSubj ? 'selected' : ''}>${esc(x.code)}. ${esc(x.name)}</option>`).join('')}</select>
         <select id="item-sort" onchange="itemSort = this.value; renderItemTable()" class="border rounded px-2 py-1 text-sm">
           <option value="q">문항 번호순</option><option value="wrong">오답률 높은 순</option><option value="disc">변별도 낮은 순</option><option value="flag">검토 필요 먼저</option></select>
         <span id="item-note" class="text-xs text-slate-500"></span></div>
@@ -1021,10 +1023,11 @@
     function renderItemTable() {
       const f = lastStats.forms[Math.min(itemForm, lastStats.forms.length - 1)];
       let rows = f.items.slice();
+      if (itemSubj) rows = rows.filter(x => x.subject === itemSubj);          // 과목 필터
       if (itemSort === 'wrong') rows.sort((a, b) => b.wrong_rate - a.wrong_rate || a.q - b.q);
       else if (itemSort === 'disc') rows.sort((a, b) => (a.disc ?? 9) - (b.disc ?? 9) || a.q - b.q);
       else if (itemSort === 'flag') rows.sort((a, b) => b.flags.length - a.flags.length || a.q - b.q);
-      document.getElementById('item-note').innerText = f.enough ? `응시자 ${f.n}명` : `응시자 ${f.n}명 (${lastStats.min_n_item}명 미만이라 변별도·검토 표시 보류, 참고용)`;
+      document.getElementById('item-note').innerText = (f.enough ? `응시자 ${f.n}명` : `응시자 ${f.n}명 (${lastStats.min_n_item}명 미만이라 변별도·검토 표시 보류, 참고용)`) + (itemSubj ? ` · ${rows.length}문항` : '');
       document.getElementById('item-tbody').innerHTML = rows.map(it => {
         const ch = c => { const v = it.choices[c], right = String(it.answer) === c;
           return `<td class="p-1.5 border ${right ? 'bg-emerald-50 font-bold text-emerald-700' : (v >= 25 ? 'bg-red-50 text-red-700 font-bold' : '')}">${f1(v)}</td>`; };
