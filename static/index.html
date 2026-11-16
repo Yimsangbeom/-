@@ -28,7 +28,7 @@
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col">
   <header class="no-print bg-blue-900 text-white px-6 py-4 flex justify-between items-center shadow">
-    <div>
+    <div onclick="showTab('home')" onkeydown="if (event.key === 'Enter') showTab('home')" role="button" tabindex="0" class="cursor-pointer select-none hover:opacity-80" title="홈 화면으로 이동">
       <h1 class="text-xl font-bold">OCR_자동 채점 프로그램</h1>
       <p id="hdr-sub" class="text-xs text-blue-200">ocr.ehancom.com</p>
     </div>
