@@ -24,7 +24,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("OMR_DATA_DIR", os.path.join(BASE_DIR, "data"))
 TEMP_DIR = os.path.join(DATA_DIR, "temp")
 RESULT_DIR = os.path.join(DATA_DIR, "results")
-for d in (DATA_DIR, TEMP_DIR, RESULT_DIR):
+SOURCE_DIR = os.path.join(DATA_DIR, "sources")      # 다시 채점용 원본 페이지 이미지 (화면으로는 제공하지 않음)
+for d in (DATA_DIR, TEMP_DIR, RESULT_DIR, SOURCE_DIR):
     os.makedirs(d, exist_ok=True)
 layouts.load_user_layouts(DATA_DIR)   # 자동 인식으로 등록한 답안지 양식
 
@@ -135,6 +136,10 @@ def remove_result_files(items):
                 p = os.path.join(RESULT_DIR, os.path.basename(r[k]))
                 if os.path.isfile(p):
                     os.remove(p)
+        if r.get("src"):
+            p = os.path.join(SOURCE_DIR, os.path.basename(r["src"]))
+            if os.path.isfile(p):
+                os.remove(p)
 
 
 def activate(exam_id):
@@ -239,11 +244,13 @@ def judge(item):
     return ("불합격" if item["total_score"] / exam_mod.n_subjects(state["exam"]) < state["pass_average"] else "합격"), []
 
 
-def make_result(res, page_label, is_test=False, verify=None, keys=None):
-    """채점 결과를 저장용 dict 로 만들고 판독 이미지를 저장한다. (lock 안에서 호출)"""
+def make_result(res, page_label, is_test=False, verify=None, keys=None, src_img=None, rid=None, keep=None):
+    """채점 결과를 저장용 dict 로 만들고 판독 이미지를 저장한다. (lock 안에서 호출)
+    src_img: 원본 페이지 이미지(다시 채점용으로 보관). rid/keep: 다시 채점할 때 기존 번호와 이름 등을 유지."""
     global next_id
-    rid = next_id
-    next_id += 1
+    if rid is None:
+        rid = next_id
+        next_id += 1
     vis_name = f"vis_{rid}.jpg"
     cv2.imwrite(os.path.join(RESULT_DIR, vis_name), res["vis_img"])
     name_url = ""
@@ -275,6 +282,14 @@ def make_result(res, page_label, is_test=False, verify=None, keys=None):
         item["key_used"] = [int(x) for x in keys.get(res["exam_type"], keys[state["exam"]["forms"][0]])][:n_q]
     if verify is not None:
         item["verify"] = verify
+    if src_img is not None:
+        cv2.imwrite(os.path.join(SOURCE_DIR, f"src_{rid}.jpg"), src_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        item["src"] = f"src_{rid}.jpg"
+    if keep:
+        item["name"] = keep.get("name", "")
+        for k in ("src", "verify"):
+            if keep.get(k) and k not in item:
+                item[k] = keep[k]
     return item
 
 
@@ -401,7 +416,7 @@ def _grade_files(saved, ex, keys, thr, job=None):
             for label, img_bgr in pages:
                 res = grade_image(img_bgr, ex, keys, thr)
                 with lock:
-                    item = make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys)
+                    item = make_result(res, label.replace(os.path.basename(temp_path), shown), keys=keys, src_img=img_bgr)
                     graded_results.append(item)
                     store.add_results([item])
                     new_results.append(item)
@@ -460,6 +475,53 @@ def grade_progress(job_id):
         if not job:
             return jsonify({"status": "error", "message": "작업을 찾을 수 없습니다."}), 404
         return jsonify({k: job[k] for k in ("status", "total", "done", "current", "errors", "n_results")})
+
+
+def _run_regrade(job, targets, ex, keys, thr):
+    errors, n = [], 0
+    for old in targets:
+        try:
+            with jobs_lock:
+                job["current"] = old.get("filename", "")
+            img = cv2.imread(os.path.join(SOURCE_DIR, os.path.basename(old["src"])))
+            if img is None:
+                raise ValueError("원본 이미지를 읽을 수 없습니다.")
+            res = grade_image(img, ex, keys, thr)
+            with lock:
+                if not any(r["id"] == old["id"] for r in graded_results):
+                    continue                                   # 그 사이에 삭제된 건
+                new = make_result(res, old["filename"], is_test=old.get("is_test", False), keys=keys, rid=old["id"], keep=old)
+                new["exam_id"] = old.get("exam_id", new["exam_id"])
+                graded_results[:] = [new if r["id"] == old["id"] else r for r in graded_results]
+                store.update_result(new)
+            n += 1
+        except Exception as e:
+            errors.append(f"{old.get('filename', old['id'])}: {e}")
+        finally:
+            with jobs_lock:
+                job["done"] += 1
+    with jobs_lock:
+        job["errors"], job["n_results"], job["status"] = errors, n, "done"
+
+
+@app.route("/api/regrade", methods=["POST"])
+def regrade():
+    """저장해 둔 원본 이미지로 다시 채점한다(현재 정답/설정/판독 방식 적용). 번호, 파일명, 입력한 이름은 유지.
+    body: {"ids": [...]} 이면 그 건만, 없으면 현재 시험의 실제 응시자 전체."""
+    ids = (request.get_json(silent=True) or {}).get("ids")
+    ex, keys, thr = snapshot()
+    with lock:
+        pool = [r for r in graded_results if not r.get("is_test")] if ids is None else [r for r in graded_results if r["id"] in {int(i) for i in ids}]
+        targets = [r for r in pool if r.get("src") and os.path.isfile(os.path.join(SOURCE_DIR, os.path.basename(r["src"])))]
+        skipped = len(pool) - len(targets)
+    if not targets:
+        return jsonify({"status": "error", "message": "다시 채점할 수 있는 답안지가 없습니다. (원본이 보관되지 않은 이전 결과는 파일을 다시 올려야 합니다.)", "skipped": skipped}), 400
+    job_id = uuid.uuid4().hex[:12]
+    job = {"status": "running", "total": len(targets), "done": 0, "current": "", "errors": [], "n_results": 0, "t": time.time()}
+    with jobs_lock:
+        jobs[job_id] = job
+    threading.Thread(target=_run_regrade, args=(job, targets, ex, keys, thr), daemon=True).start()
+    return jsonify({"status": "started", "job": job_id, "total": len(targets), "skipped": skipped})
 
 
 @app.route("/api/results/<int:rid>/name", methods=["POST"])
