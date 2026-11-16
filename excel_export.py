@@ -116,7 +116,7 @@ def build(exam, spq, judged, st, st_scope, pass_average, subject_fail_cutoff, pa
                 if has_test:
                     r["구분"] = "테스트" if it.get("is_test") else "실제"
                 r.update({"시험명": it.get("exam_title", ""), "문제유형": it["exam_type"], "수험번호": it["student_id"],
-                          "이름": it.get("name", ""), "파일명": it["filename"]})
+                          "이름": it.get("name", "")})
                 r["표시한 유형"] = it.get("marked_type") or ""
                 r["유형 확인"] = it.get("type_note", "")
                 r["교정"] = "교정됨" if it.get("corrected") else ""

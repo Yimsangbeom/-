@@ -31,13 +31,23 @@ st = c.get("/api/stats?scope=real").get_json(); assert st["n"] == 2
 df = pd.read_excel(io.BytesIO(c.get("/api/export/excel?scope=real").data), sheet_name="성적총괄표")
 assert (df["교정"] == "교정됨").sum() == 1
 # 다시 채점은 교정 건을 건드리지 않음
-j = c.post("/api/regrade", json={}).get_json(); assert j["total"] == 1 and j["corrected"] == 1, j
+j = c.post("/api/regrade", json={}).get_json(); assert j["total"] == 2 and j["corrected"] == 1, j
 for _ in range(120):
     p = c.get("/api/grade/progress/" + j["job"]).get_json()
     if p["status"] == "done": break
     time.sleep(0.5)
 now = {z["id"]: z for z in c.get("/api/results").get_json()}
 assert now[rid]["corrected"] and now[rid]["total_score"] == 485
+# 정답을 바꾸면 교정한 건도 사람이 고친 답은 유지한 채 점수는 새 정답으로 다시 계산
+assert c.post("/api/config", json={"answer_keys": {"A": keyA, "B": [1] * 100}}).status_code == 200
+j = c.post("/api/regrade", json={"ids": [rid]}).get_json(); assert j["total"] == 1 and j["corrected"] == 1, j
+for _ in range(120):
+    p = c.get("/api/grade/progress/" + j["job"]).get_json()
+    if p["status"] == "done": break
+    time.sleep(0.5)
+n2 = {z["id"]: z for z in c.get("/api/results").get_json()}[rid]
+assert n2["corrected"] and n2["student_answers"] == y["student_answers"] and n2["total_score"] == sum(1 for q in range(1, 101) if n2["student_answers"][str(q)] == "1") * 5, n2["total_score"]
+assert c.post("/api/config", json={"answer_keys": {"A": keyA, "B": [int(v) for v in keyB]}}).status_code == 200
 # 되돌리기
 u = c.post(f"/api/results/{rid}/uncorrect").get_json(); assert u["status"] == "success" and not u["result"]["corrected"]
 assert u["result"]["student_answers"] == x["student_answers"] and u["result"]["total_score"] == x["total_score"] and u["result"]["student_id"] == x["student_id"]

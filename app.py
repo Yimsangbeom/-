@@ -483,6 +483,15 @@ def _run_regrade(job, targets, ex, keys, thr):
         try:
             with jobs_lock:
                 job["current"] = old.get("filename", "")
+            if old.get("corrected"):
+                # 사람이 교정한 답은 그대로 두고, 현재 정답/설정으로 점수만 다시 계산한다(이미지를 다시 읽지 않음)
+                with lock:
+                    cur = next((r for r in graded_results if r["id"] == old["id"]), None)
+                    if cur is not None:
+                        rescore_item(cur, cur["student_answers"], cur["exam_type"], cur["student_id"])
+                        store.update_result(cur)
+                        n += 1
+                continue
             img = cv2.imread(os.path.join(SOURCE_DIR, os.path.basename(old["src"])))
             if img is None:
                 raise ValueError("원본 이미지를 읽을 수 없습니다.")
@@ -512,9 +521,8 @@ def regrade():
     ex, keys, thr = snapshot()
     with lock:
         pool = [r for r in graded_results if not r.get("is_test")] if ids is None else [r for r in graded_results if r["id"] in {int(i) for i in ids}]
-        n_corrected = sum(1 for r in pool if r.get("corrected"))
-        pool = [r for r in pool if not r.get("corrected")]            # 사람이 교정한 결과는 다시 채점으로 덮어쓰지 않는다
-        targets = [r for r in pool if r.get("src") and os.path.isfile(os.path.join(SOURCE_DIR, os.path.basename(r["src"])))]
+        n_corrected = sum(1 for r in pool if r.get("corrected"))       # 교정한 건은 이미지를 다시 읽지 않고 점수만 다시 계산
+        targets = [r for r in pool if r.get("corrected") or (r.get("src") and os.path.isfile(os.path.join(SOURCE_DIR, os.path.basename(r["src"]))))]
         skipped = len(pool) - len(targets)
     if not targets:
         return jsonify({"status": "error", "message": "다시 채점할 수 있는 답안지가 없습니다. (원본이 보관되지 않은 이전 결과는 파일을 다시 올려야 하고, 교정한 답안지는 제외됩니다.)", "skipped": skipped, "corrected": n_corrected}), 400
