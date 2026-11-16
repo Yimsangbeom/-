@@ -615,6 +615,7 @@
       const body = { exam_type: document.getElementById('ed-form').value, student_id: document.getElementById('ed-sid').value.trim(), name: document.getElementById('ed-name').value.trim(), answers: ed.answers };
       const r = await (await fetch('/api/results/' + ed.id + '/correct', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })).json();
       if (r.status !== 'success') { alert('저장하지 못했습니다: ' + r.message); return; }
+      selectedIds.delete(ed.id);      // 저장한 답안지는 체크 해제 (다음 답안지로 넘어가면 나머지는 체크 유지)
       await refreshResults();
       if (next && edIdx < edQueue.length - 1) { edIdx++; loadEd(); } else closeEditor();
     }
