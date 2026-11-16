@@ -964,21 +964,68 @@ def get_formmap():
         return jsonify({"status": "success", **formmap_payload()})
 
 
-@app.route("/api/formmap/analyze", methods=["POST"])
-def analyze_formmap():
-    """A형/B형 문제지 파일을 읽어 대응 문제를 찾는다(저장하지 않음 - 화면에서 확인/수정 후 저장)."""
-    fa, fb = request.files.get("file_a"), request.files.get("file_b")
-    if not fa or not fb:
-        return jsonify({"status": "error", "message": "A형과 B형 문제지 파일을 모두 올려 주세요."}), 400
+def _paper_key(form):
+    return f"paper:{registry['active']}:{form}"
+
+
+def _groups(ex):
+    """문항 위치(0부터)별 과목 번호."""
+    return [exam_mod.subject_index(ex, q) for q in range(1, exam_mod.total_questions(ex) + 1)]
+
+
+@app.route("/api/paper", methods=["GET"])
+def get_papers():
+    """등록된 문제지 현황 (유형별)."""
+    with lock:
+        out = {}
+        for f in state["exam"]["forms"]:
+            p = store.get_setting(_paper_key(f))
+            out[f] = {"filename": p["filename"], "count": len(p["questions"]), "updated": p.get("updated", "")} if p else None
+        return jsonify({"status": "success", "papers": out, "forms": state["exam"]["forms"]})
+
+
+@app.route("/api/paper/<form>", methods=["POST"])
+def upload_paper(form):
+    """유형(A/B)별 시험지(문제지) 등록: 글자를 읽어 문제로 나눠 저장한다."""
+    f = request.files.get("file")
     with lock:
         ex = copy.deepcopy(state["exam"])
+    if form not in ex["forms"]:
+        return jsonify({"status": "error", "message": f"이 시험에 없는 문제 유형입니다: {form}"}), 400
+    if not f:
+        return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
+    try:
+        qs = paper_match.parse_paper(f.read(), f.filename, exam_mod.total_questions(ex))
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"{form}형 문제지: {e}"}), 422
+    with lock:
+        store.set_setting(_paper_key(form), {"filename": display_name(f), "questions": qs, "updated": time.strftime("%Y-%m-%d %H:%M")})
+    return jsonify({"status": "success", "form": form, "count": len(qs), "filename": display_name(f)})
+
+
+@app.route("/api/paper/<form>", methods=["DELETE"])
+def delete_paper(form):
+    with lock:
+        store.delete_setting(_paper_key(form))
+    return jsonify({"status": "success"})
+
+
+@app.route("/api/formmap/analyze", methods=["POST"])
+def analyze_formmap():
+    """등록된 A형/B형 문제지로 같은 과목 안에서 대응 문제를 찾는다(저장하지 않음 - 화면에서 확인/수정 후 저장)."""
+    with lock:
+        ex = copy.deepcopy(state["exam"])
+        pa = store.get_setting(_paper_key(ex["forms"][0])) if ex["forms"] else None
+        pb = store.get_setting(_paper_key(ex["forms"][1])) if len(ex["forms"]) > 1 else None
     if len(ex["forms"]) != 2:
         return jsonify({"status": "error", "message": "문제 유형이 2개(A형/B형)인 시험에서만 쓸 수 있습니다."}), 400
+    if not pa or not pb:
+        return jsonify({"status": "error", "message": "A형과 B형 시험지를 모두 등록한 뒤 분석하세요."}), 400
     try:
-        r = paper_match.analyze(fa.read(), fa.filename, fb.read(), fb.filename, exam_mod.total_questions(ex), ex["choices"])
+        r = paper_match.analyze_questions(pa["questions"], pb["questions"], exam_mod.total_questions(ex), ex["choices"], _groups(ex))
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 422
-    return jsonify({"status": "success", **r, **formmap_payload(r["pairs"])})
+    return jsonify({"status": "success", **r, **formmap_payload(r["pairs"]), "groups": _groups(ex)})
 
 
 @app.route("/api/formmap", methods=["POST"])
@@ -1242,6 +1289,8 @@ def delete_exam(eid):
         store.delete_setting("state:" + eid)
         store.delete_setting("roster:" + eid)
         _roster_cache.pop(eid, None)
+        for f_ in ("A", "B", "C"):
+            store.delete_setting(f"paper:{eid}:{f_}")
         registry["list"] = [e for e in registry["list"] if e["id"] != eid]
         save_registry()
     return jsonify({"status": "success"})

@@ -168,8 +168,9 @@ def hungarian(cost):
     return res
 
 
-def match(qa, qb, n_choices):
-    """두 문제 목록을 짝짓는다. -> [{'a': A번호(1~), 'b': B번호(1~), 'score': 0~1, 'perm': [...]}] (A번호 순)"""
+def match(qa, qb, n_choices, groups=None):
+    """두 문제 목록을 짝짓는다. groups: 문항 위치(0부터)별 과목 번호 - 주면 같은 과목 안에서만 짝짓는다.
+    -> [{'a': A번호(1~), 'b': B번호(1~), 'score': 0~1, 'perm': [...]}] (A번호 순)"""
     n = max(len(qa), len(qb))
     ga = [(_grams(q["stem"]), _grams("".join(q["choices"]))) for q in qa]
     gb = [(_grams(q["stem"]), _grams("".join(q["choices"]))) for q in qb]
@@ -181,7 +182,10 @@ def match(qa, qb, n_choices):
         return s_stem
 
     sc = [[score(i, j) if i < len(qa) and j < len(qb) else 0.0 for j in range(n)] for i in range(n)]
-    cols = hungarian([[1.0 - x for x in row] for row in sc])
+    def cost(i, j):
+        pen = 3.0 if groups and i < len(groups) and j < len(groups) and groups[i] != groups[j] else 0.0      # 다른 과목끼리는 짝짓지 않는다
+        return 1.0 - sc[i][j] + pen
+    cols = hungarian([[cost(i, j) for j in range(n)] for i in range(n)])
     out = []
     for i in range(len(qa)):
         j = cols[i]
@@ -207,17 +211,23 @@ def _choice_perm(ca, cb, n):
     return [c + 1 for c in cols]
 
 
-def analyze(data_a, name_a, data_b, name_b, n_questions, n_choices):
-    """두 문제지 파일을 분석한다. -> {'pairs': [...], 'n_a', 'n_b', 'warnings': [...]}"""
-    ta, tb = extract_text(data_a, name_a), extract_text(data_b, name_b)
-    qa, qb = parse_questions(ta), parse_questions(tb)
+def parse_paper(data, filename, n_questions):
+    """문제지 파일 하나를 읽어 문제 목록으로 만든다. 문제 수가 시험 설정과 다르면 ValueError."""
+    text = extract_text(data, filename)
+    qs = parse_questions(text)
+    if len(qs) != n_questions:
+        head = re.sub(r"\s+", " ", text[:200])
+        raise ValueError(f"문제를 {len(qs)}개 찾았습니다 (시험 설정은 {n_questions}문항). "
+                         f"문제 번호가 '1.' 또는 '1)' 모양으로 시작하는지 확인하세요. 읽은 글자 앞부분: {head}")
+    return [{"stem": q["stem"], "choices": q["choices"]} for q in qs]
+
+
+def analyze_questions(qa, qb, n_questions, n_choices, groups=None):
+    """읽어 둔 두 문제 목록을 분석한다. -> {'pairs': [...], 'n_a', 'n_b', 'warnings': [...], 'a_texts', 'b_texts'}"""
+    if len(qa) != n_questions or len(qb) != n_questions:
+        raise ValueError(f"두 문제지의 문제 수가 시험 설정({n_questions}문항)과 같아야 합니다.")
+    pairs = match(qa, qb, n_choices, groups)
     warnings = []
-    for label, qs, txt in (("A형", qa, ta), ("B형", qb, tb)):
-        if len(qs) != n_questions:
-            head = re.sub(r"\s+", " ", txt[:200])
-            raise ValueError(f"{label} 문제지에서 문제를 {len(qs)}개 찾았습니다 (시험 설정은 {n_questions}문항). "
-                             f"문제 번호가 '1.' 또는 '1)' 모양으로 시작하는지 확인하세요. 읽은 글자 앞부분: {head}")
-    pairs = match(qa, qb, n_choices)
     low = [p["a"] for p in pairs if p["score"] < 0.55]
     if low:
         warnings.append(f"유사도가 낮은 문제 {len(low)}개(A형 {', '.join(map(str, low[:12]))}{' ...' if len(low) > 12 else ''})는 직접 확인하세요.")
@@ -227,3 +237,16 @@ def analyze(data_a, name_a, data_b, name_b, n_questions, n_choices):
         p["perm_changed"] = p["perm"] != list(range(1, n_choices + 1))
     return {"pairs": pairs, "n_a": len(qa), "n_b": len(qb), "warnings": warnings,
             "a_texts": [q["stem"][:70] for q in qa], "b_texts": [q["stem"][:70] for q in qb]}
+
+
+def analyze(data_a, name_a, data_b, name_b, n_questions, n_choices, groups=None):
+    """두 문제지 파일을 바로 분석한다."""
+    try:
+        qa = parse_paper(data_a, name_a, n_questions)
+    except ValueError as e:
+        raise ValueError("A형 문제지: " + e.args[0])
+    try:
+        qb = parse_paper(data_b, name_b, n_questions)
+    except ValueError as e:
+        raise ValueError("B형 문제지: " + e.args[0])
+    return analyze_questions(qa, qb, n_questions, n_choices, groups)

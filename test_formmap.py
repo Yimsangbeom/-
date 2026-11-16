@@ -90,21 +90,39 @@ print("분석 OK: 문제 대응 100/100, 선택지 순서 포함")
 r2 = paper_match.analyze(make_pdf_2col(a_lines), "A.pdf", make_pdf_2col(b_lines), "B.pdf", N, NCH)
 assert sum(1 for p in r2["pairs"] if (p["b"], p["perm"]) == exp[p["a"]]) == N, "2단 PDF 분석 실패"
 print("2단 편집 PDF OK")
+# 같은 과목 안에서만 짝짓기: 다른 과목에 거의 똑같은 문제가 있어도 같은 과목의 문제를 고른다
+import copy as _copy
+qa_ = [{"stem": q[1], "choices": q[2]} for q in base]
+qb_ = [{"stem": base[a][1], "choices": [x for x in base[a][2]]} for a in b_order]
+dup = _copy.deepcopy(qa_); dup[0] = {"stem": qa_[25]["stem"], "choices": qa_[25]["choices"]}          # A 1번(과목1)이 과목2의 26번과 똑같은 문제
+groups = [i // 20 for i in range(N)]
+mm = paper_match.match(dup, qb_, NCH, groups)
+assert groups[mm[0]["a"] - 1] == groups[mm[0]["b"] - 1], "다른 과목과 짝지어짐"
+print("같은 과목 제한 OK")
 # 파일 형식/오류
 try: paper_match.extract_text(b"x" * 10, "a.hwp"); raise AssertionError
 except ValueError as e: assert "PDF" in e.args[0]
 try: paper_match.extract_text(make_pdf(["1. 짧다"]), "a.pdf"); raise AssertionError
 except ValueError as e: assert "글자" in e.args[0]
 try: paper_match.analyze(make_pdf(a_lines[:60]), "A.pdf", make_pdf(b_lines), "B.pdf", N, NCH); raise AssertionError
-except ValueError as e: assert "A형 문제지에서 문제를" in e.args[0]
+except ValueError as e: assert "A형 문제지" in e.args[0] and "문제를" in e.args[0]
 
 # --- API: 분석 -> 저장 -> 정답 자동 생성/일치
 c = app.test_client()
 assert c.post("/api/setup", json={"password": "testpass123"}).status_code == 200
-def up(): return {"file_a": (io.BytesIO(make_pdf(a_lines)), "A형.pdf"), "file_b": (io.BytesIO(make_docx(b_lines)), "B형.docx")}
-j = c.post("/api/formmap/analyze", data=up(), content_type="multipart/form-data").get_json()
-assert j["status"] == "success" and len(j["pairs"]) == N and j["forms"] == ["A", "B"]
-assert c.post("/api/formmap/analyze", data={"file_a": (io.BytesIO(b"x"), "a.hwp"), "file_b": (io.BytesIO(b"x"), "b.hwp")}, content_type="multipart/form-data").status_code == 422
+pa = c.post("/api/paper/A", data={"file": (io.BytesIO(make_pdf(a_lines)), "A형.pdf")}, content_type="multipart/form-data").get_json()
+pb = c.post("/api/paper/B", data={"file": (io.BytesIO(make_docx(b_lines)), "B형.docx")}, content_type="multipart/form-data").get_json()
+assert pa["status"] == "success" and pa["count"] == N and pb["count"] == N and pa["form"] == "A"
+pp = c.get("/api/paper").get_json()["papers"]; assert pp["A"]["filename"] == "A형.pdf" and pp["B"]["count"] == N
+assert c.post("/api/paper/Z", data={"file": (io.BytesIO(b"x"), "a.pdf")}, content_type="multipart/form-data").status_code == 400
+assert c.post("/api/paper/A", data={"file": (io.BytesIO(make_pdf(a_lines[:60])), "A.pdf")}, content_type="multipart/form-data").status_code == 422      # 문제 수 부족
+assert c.get("/api/paper").get_json()["papers"]["A"]["filename"] == "A형.pdf"                                          # 실패해도 기존 등록 유지
+j = c.post("/api/formmap/analyze").get_json()
+assert j["status"] == "success" and len(j["pairs"]) == N and j["forms"] == ["A", "B"] and len(j["groups"]) == N
+assert sum(1 for p in j["pairs"] if (p["b"], p["perm"]) == exp[p["a"]]) == N
+assert all(j["groups"][p["a"] - 1] == j["groups"][p["b"] - 1] for p in j["pairs"]), "다른 과목끼리 짝지어짐"
+assert c.delete("/api/paper/B").status_code == 200 and c.post("/api/formmap/analyze").status_code == 400            # B 미등록이면 분석 불가
+c.post("/api/paper/B", data={"file": (io.BytesIO(make_docx(b_lines)), "B형.docx")}, content_type="multipart/form-data")
 keyA = [rng.randint(1, NCH) for _ in range(N)]
 assert c.post("/api/config", json={"answer_keys": {"A": keyA}}).status_code == 200            # 아직 대응표 없음(half_swap)
 sv = c.post("/api/formmap", json={"pairs": [{"a": p["a"], "b": p["b"], "perm": p["perm"]} for p in j["pairs"]]}).get_json()

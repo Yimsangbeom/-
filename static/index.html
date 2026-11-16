@@ -88,22 +88,20 @@
         <div class="flex-1 relative min-h-[360px]"><div id="key-summary" class="absolute inset-0 text-sm bg-slate-50 p-4 rounded border overflow-y-auto font-mono"></div></div>
       </div>
 
+      <div id="paper-cards" class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+
       <div id="formmap-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
         <div class="flex flex-wrap justify-between items-start gap-3 mb-2">
-          <h2 class="text-lg font-bold">시험지(문제지) 등록 - A형/B형 대응 문제 찾기</h2>
+          <h2 class="text-lg font-bold">A형/B형 대응 문제 찾기</h2>
           <div class="flex flex-wrap gap-2">
             <a href="/api/formmap/template" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-2 rounded font-bold">대응표 엑셀 받기</a>
             <label class="bg-slate-500 hover:bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold cursor-pointer">대응표 엑셀 올리기<input type="file" accept=".xlsx" class="hidden" onchange="uploadFormMapExcel(event)"></label>
             <button id="fm-del" onclick="deleteFormMap()" class="hidden bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-bold">대응표 해제</button>
           </div>
         </div>
-        <p class="text-sm text-slate-600">A형과 B형의 <b>문제 배치가 다를 때</b> 쓰세요. 두 문제지(글자가 들어 있는 PDF 또는 Word 파일)를 올리면 문제 내용을 읽어 같은 문제를 찾고(선택지 순서가 다른 것도), 확인 후 저장하면 <b>통계의 문항 분석(A·B 합산)이 그 대응으로 다시 계산</b>됩니다. 사진/스캔으로 만든 PDF는 글자를 읽을 수 없어 분석할 수 없습니다.</p>
+        <p class="text-sm text-slate-600">A형과 B형의 <b>문제 배치가 다를 때</b> 쓰세요. 위에서 A형·B형 시험지를 각각 등록한 뒤 <b>대응 문제 찾기</b>를 누르면, A형의 각 문제가 <b>같은 과목의 B형 몇 번</b>인지 내용으로 찾아 짝을 지어 보여 줍니다(선택지 순서가 다른 문제도). 확인 후 저장하면 통계의 문항 분석(A·B 합산)이 그 짝으로 계산됩니다.</p>
         <div id="fm-status" class="mt-3 text-sm"></div>
-        <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-          <label class="block text-sm font-semibold">A형 문제지 <input id="fm-file-a" type="file" accept=".pdf,.docx,.txt" class="mt-1 block w-full text-xs border rounded p-1.5"></label>
-          <label class="block text-sm font-semibold">B형 문제지 <input id="fm-file-b" type="file" accept=".pdf,.docx,.txt" class="mt-1 block w-full text-xs border rounded p-1.5"></label>
-          <button onclick="analyzeFormMap()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg">분석해서 대응 문제 찾기</button>
-        </div>
+        <div class="mt-3"><button id="fm-analyze" onclick="analyzeFormMap()" class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold px-6 py-2.5 rounded-lg" disabled>대응 문제 찾기 (분석)</button> <span id="fm-hint" class="text-xs text-slate-500 ml-2"></span></div>
       </div>
 
       <div id="roster-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
@@ -328,7 +326,7 @@
     }
     // 조회 전용 계정: 변경 기능 버튼/입력을 숨긴다 (서버도 변경 요청을 막는다)
     function applyViewer() {
-      const bad = /saveFormMap|deleteFormMap|analyzeFormMap|saveNewConfig|openExamDialog|runTest|clearTest|deleteRoster|deleteSelected|regrade|openEditor|deleteAllResults|saveConfig/;
+      const bad = /saveFormMap|deleteFormMap|analyzeFormMap|deletePaper|saveNewConfig|openExamDialog|runTest|clearTest|deleteRoster|deleteSelected|regrade|openEditor|deleteAllResults|saveConfig/;
       document.querySelectorAll('button[onclick]').forEach(b => { if (bad.test(b.getAttribute('onclick'))) b.classList.add('hidden'); });
       document.querySelectorAll('input[type=file]').forEach(i => { const l = i.closest('label'); if (l) l.classList.add('hidden'); });
       ['cfg-score', 'cfg-passavg', 'cfg-subfail', 'cfg-th'].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = true; });
@@ -448,7 +446,7 @@
         html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${q}.</b> ${cells.join(' / ')}</div>`;
       }
       box.innerHTML = html + '</div>';
-      renderMasterSlots(); renderFormMapCard();
+      renderMasterSlots(); renderFormMapCard(); loadPapers();
     }
     function conflictText() { return ''; }      // 유형 간 정답 대조 경고는 화면에 표시하지 않는다(내부 정보)
     async function saveConfig(keys) {
@@ -741,7 +739,7 @@
       box.innerHTML = `<span class="px-2 py-0.5 rounded text-xs font-bold ${custom ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${custom ? '대응표 적용됨' : '대응표 없음'}</span> ${esc(rule)}`;
     }
     function openFormMap(d) {
-      fm = { pairs: d.pairs.map(p => ({ a: p.a, b: p.b, perm: (p.perm || []).slice(), score: p.score, orig: p.b })), aT: d.a_texts || [], bT: d.b_texts || [], n: d.n, ch: d.choices, forms: d.forms };
+      fm = { pairs: d.pairs.map(p => ({ a: p.a, b: p.b, perm: (p.perm || []).slice(), score: p.score, orig: p.b })), aT: d.a_texts || [], bT: d.b_texts || [], n: d.n, ch: d.choices, forms: d.forms, groups: d.groups || null };
       document.getElementById('fm-sum').innerText = `${d.forms[0]}형 ${fm.n}문항 ↔ ${d.forms[1]}형  ` + (d.warnings || []).join(' ');
       document.getElementById('fm-only').checked = false; renderFormMap(); document.getElementById('fm-dlg').showModal();
     }
@@ -753,7 +751,7 @@
         const isDup = dup[p.b] > 1, low = p.score != null && p.score < 0.55, pc = !p.perm.every((v, i) => v === i + 1), pbad = !fmPermOk(p);
         if (isDup || pbad) bad++;
         if (only && !(isDup || low || pc || pbad)) return;
-        const opts = Array.from({ length: fm.n }, (_, i) => `<option value="${i + 1}" ${i + 1 === p.b ? 'selected' : ''}>${i + 1}번</option>`).join('');
+        const g = fm.groups ? fm.groups[p.a - 1] : null, opts = Array.from({ length: fm.n }, (_, i) => i + 1).filter(b => g === null || fm.groups[b - 1] === g || b === p.b).map(b => `<option value="${b}" ${b === p.b ? 'selected' : ''}>${b}번</option>`).join('');
         rows += `<tr class="border-b ${isDup || pbad ? 'bg-red-50' : (low ? 'bg-amber-50' : '')}"><td class="p-1.5 border text-center font-bold">${p.a}</td><td class="p-1.5 border">${esc(fm.aT[p.a - 1] || '')}</td>
           <td class="p-1.5 border text-center"><select onchange="setFmB(${p.a}, +this.value)" class="border rounded px-1 py-0.5 ${isDup ? 'border-red-500 text-red-600 font-bold' : ''}">${opts}</select></td><td class="p-1.5 border">${esc(fm.bT[p.b - 1] || '')}</td>
           <td class="p-1.5 border text-center ${low ? 'text-amber-700 font-bold' : ''}">${p.score == null ? '-' : Math.round(p.score * 100) + '%'}</td>
@@ -766,12 +764,39 @@
     }
     function setFmB(a, b) { fm.pairs.find(p => p.a === a).b = b; fm.pairs.find(p => p.a === a).score = null; renderFormMap(); }
     function setFmPerm(a, v) { fm.pairs.find(p => p.a === a).perm = v.split(/[,\s]+/).filter(Boolean).map(Number); renderFormMap(); }
+    let papers = {};
+    async function loadPapers() {
+      try { papers = (await (await fetch('/api/paper')).json()).papers || {}; } catch (e) { return; }
+      const box = document.getElementById('paper-cards'); if (!box) return;
+      const forms = EX().forms;
+      box.innerHTML = forms.length < 2 ? '' : forms.map(f => {
+        const p = papers[f];
+        return `<div class="bg-white p-6 rounded-xl shadow-sm border ${p ? 'border-emerald-300' : ''}"><div class="flex justify-between items-start gap-2"><h2 class="text-lg font-bold">시험지 등록 (${esc(f)}형)</h2>
+          ${p ? '<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 text-xs font-bold">등록됨</span>' : '<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-600 text-xs font-bold">미등록</span>'}</div>
+          <p class="text-xs text-slate-500 mt-1">${esc(f)}형 문제지 파일(글자가 들어 있는 PDF 또는 Word)을 올리면 문제를 나눠 저장합니다. 사진/스캔 PDF는 읽을 수 없습니다.</p>
+          <div class="text-sm mt-3">${p ? `<b>${esc(p.filename)}</b> · 문제 ${p.count}개 인식 <span class="text-xs text-slate-400">(${esc(p.updated)})</span>` : '<span class="text-slate-500">등록된 시험지가 없습니다.</span>'}</div>
+          <div class="mt-3 flex gap-2"><label class="flex-1 text-center bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2 rounded-lg cursor-pointer">${p ? esc(f) + '형 시험지 다시 등록' : esc(f) + '형 시험지 선택'}<input type="file" accept=".pdf,.docx,.txt" class="hidden" onchange="uploadPaper(event, '${esc(f)}')"></label>
+          ${p ? `<button onclick="deletePaper('${esc(f)}')" class="px-3 py-2 rounded-lg border border-red-300 text-red-600 text-sm font-bold hover:bg-red-50">삭제</button>` : ''}</div></div>`;
+      }).join('');
+      const both = forms.length === 2 && forms.every(f => papers[f]);
+      const bt = document.getElementById('fm-analyze'); if (bt) bt.disabled = !both;
+      const h = document.getElementById('fm-hint'); if (h) h.innerText = both ? '' : (forms.length === 2 ? '두 시험지를 모두 등록하면 누를 수 있습니다.' : '');
+    }
+    async function uploadPaper(e, form) {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      busy(true, `${form}형 시험지를 읽는 중...`, null, f.name);
+      let d; try { d = await (await fetch('/api/paper/' + encodeURIComponent(form), { method: 'POST', body: fd })).json(); } catch (err) { d = { status: 'error', message: String(err) }; }
+      await notify(d.status === 'success' ? `${form}형 시험지 ${d.count}문제를 읽어 등록했습니다.` : '등록하지 못했습니다:\n' + d.message);
+      loadPapers();
+    }
+    async function deletePaper(form) {
+      if (!confirm(`${form}형 시험지 등록을 삭제합니다. (이미 저장한 대응표는 그대로입니다)\n계속할까요?`)) return;
+      await fetch('/api/paper/' + encodeURIComponent(form), { method: 'DELETE' }); loadPapers();
+    }
     async function analyzeFormMap() {
-      const fa = document.getElementById('fm-file-a').files[0], fb = document.getElementById('fm-file-b').files[0];
-      if (!fa || !fb) { alert('A형과 B형 문제지 파일을 모두 선택하세요.'); return; }
-      const fd = new FormData(); fd.append('file_a', fa); fd.append('file_b', fb);
-      busy(true, '문제지를 분석하는 중...', null, '문제를 나누고 같은 문제를 찾고 있습니다');
-      let d; try { d = await (await fetch('/api/formmap/analyze', { method: 'POST', body: fd })).json(); } catch (err) { d = { status: 'error', message: String(err) }; }
+      busy(true, '대응 문제를 찾는 중...', null, '같은 과목 안에서 같은 문제를 찾고 있습니다');
+      let d; try { d = await (await fetch('/api/formmap/analyze', { method: 'POST' })).json(); } catch (err) { d = { status: 'error', message: String(err) }; }
       busy(false); await new Promise(r => setTimeout(r, 60));
       if (d.status !== 'success') { alert('분석하지 못했습니다:\n' + d.message); return; }
       openFormMap(d);
