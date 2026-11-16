@@ -17,6 +17,7 @@ import excel_export
 import exam as exam_mod
 import layout_detect
 import layouts
+import paper_match
 import stats
 from omr_engine import OMREngine, load_pages_from_file
 
@@ -190,7 +191,7 @@ def exam_forms():
 def current_conflicts():
     """두 유형 정답이 모두 등록된 경우, 첫 번째 유형 번호 기준으로 서로 다른 문항 목록."""
     ex = state["exam"]
-    if ex["form_rule"] == "half_swap" and len(ex["forms"]) == 2 and all(state["keys_set"][f] for f in ex["forms"]):
+    if exam_mod.is_paired(ex) and all(state["keys_set"][f] for f in ex["forms"]):
         a, b = ex["forms"]
         return exam_mod.key_conflicts(ex, state["answer_keys"][a], state["answer_keys"][b])
     return []
@@ -209,10 +210,10 @@ def register_key(form, key, source="sheet"):
     state["keys_set"][form] = True
     state.setdefault("key_source", {})[form] = source
     derived = False
-    if ex["form_rule"] == "half_swap" and len(ex["forms"]) == 2:
+    if exam_mod.is_paired(ex):
         other = [f for f in ex["forms"] if f != form][0]
         if not state["keys_set"][other]:
-            state["answer_keys"][other] = exam_mod.derive_key(ex, state["answer_keys"][form])
+            state["answer_keys"][other] = exam_mod.derive_key(ex, state["answer_keys"][form], form)
             state["keys_set"][other] = True
             state["key_source"][other] = "derived"
             derived = True
@@ -939,6 +940,112 @@ def export_excel():
     )
 
 
+# ------------------------- A형/B형 문제 대응표 (문제지 분석) -------------------------
+def refresh_derived_keys():
+    """대응 규칙이 바뀌면, 다른 유형에서 자동 생성했던 정답을 새 규칙으로 다시 만든다. (lock 안에서 호출)"""
+    ex = state["exam"]
+    if not exam_mod.is_paired(ex):
+        return
+    for f in ex["forms"]:
+        other = [x for x in ex["forms"] if x != f][0]
+        if state.get("key_source", {}).get(f) == "derived" and state["keys_set"].get(other) and state.get("key_source", {}).get(other) != "derived":
+            state["answer_keys"][f] = exam_mod.derive_key(ex, state["answer_keys"][other], other)
+
+
+def formmap_payload(pairs=None):
+    ex = state["exam"]
+    return {"forms": ex["forms"], "n": exam_mod.total_questions(ex), "choices": ex["choices"], "rule": ex["form_rule"],
+            "pairs": pairs if pairs is not None else [{"a": a, "b": b, "perm": perm} for a, b, perm in (ex.get("form_map") or [])]}
+
+
+@app.route("/api/formmap", methods=["GET"])
+def get_formmap():
+    with lock:
+        return jsonify({"status": "success", **formmap_payload()})
+
+
+@app.route("/api/formmap/analyze", methods=["POST"])
+def analyze_formmap():
+    """A형/B형 문제지 파일을 읽어 대응 문제를 찾는다(저장하지 않음 - 화면에서 확인/수정 후 저장)."""
+    fa, fb = request.files.get("file_a"), request.files.get("file_b")
+    if not fa or not fb:
+        return jsonify({"status": "error", "message": "A형과 B형 문제지 파일을 모두 올려 주세요."}), 400
+    with lock:
+        ex = copy.deepcopy(state["exam"])
+    if len(ex["forms"]) != 2:
+        return jsonify({"status": "error", "message": "문제 유형이 2개(A형/B형)인 시험에서만 쓸 수 있습니다."}), 400
+    try:
+        r = paper_match.analyze(fa.read(), fa.filename, fb.read(), fb.filename, exam_mod.total_questions(ex), ex["choices"])
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 422
+    return jsonify({"status": "success", **r, **formmap_payload(r["pairs"])})
+
+
+@app.route("/api/formmap", methods=["POST"])
+def save_formmap():
+    """확인한 대응표를 저장한다. body: {pairs:[{a, b, perm}]}"""
+    data = request.get_json(silent=True) or {}
+    with lock:
+        try:
+            e = copy.deepcopy(state["exam"])
+            e["form_rule"] = "custom"
+            e["form_map"] = [[int(p["a"]), int(p["b"]), p.get("perm")] for p in (data.get("pairs") or [])]
+            e = exam_mod.normalize(e, _layout_of(e))
+        except (ValueError, KeyError, TypeError) as ex_:
+            return jsonify({"status": "error", "message": str(ex_)}), 400
+        state["exam"] = e
+        refresh_derived_keys()
+        save_state()
+        return jsonify({"status": "success", "key_conflicts": current_conflicts(), **formmap_payload()})
+
+
+@app.route("/api/formmap", methods=["DELETE"])
+def delete_formmap():
+    with lock:
+        e = copy.deepcopy(state["exam"])
+        e["form_rule"] = "none"
+        e.pop("form_map", None)
+        state["exam"] = e
+        save_state()
+        return jsonify({"status": "success", **formmap_payload()})
+
+
+@app.route("/api/formmap/template", methods=["GET"])
+def formmap_template():
+    """대응표 엑셀(현재 대응표, 없으면 같은 번호). 열: A형 번호, B형 번호, 선택지 대응(A형 1~n번 선택지가 B형 몇 번인지, 쉼표)."""
+    with lock:
+        ex = state["exam"]
+        pairs = ex.get("form_map") or [[q, q, list(range(1, ex["choices"] + 1))] for q in range(1, exam_mod.total_questions(ex) + 1)]
+        a, b = ex["forms"][0], ex["forms"][1] if len(ex["forms"]) > 1 else "B"
+        df = pd.DataFrame([{f"{a}형 번호": x[0], f"{b}형 번호": x[1], "선택지 대응(선택)": ",".join(map(str, x[2]))} for x in pairs])
+    out = io.BytesIO()
+    df.to_excel(out, index=False, sheet_name="문제대응표")
+    out.seek(0)
+    return send_file(out, download_name="문제대응표.xlsx", as_attachment=True,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@app.route("/api/formmap/excel", methods=["POST"])
+def formmap_from_excel():
+    """대응표 엑셀을 읽어 화면에서 확인/저장할 수 있게 돌려준다(저장하지 않음)."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"status": "error", "message": "파일이 없습니다."}), 400
+    with lock:
+        n_ch = state["exam"]["choices"]
+    try:
+        df = pd.read_excel(f, dtype=str).fillna("")
+        cols = list(df.columns)
+        pairs = []
+        for _, r in df.iterrows():
+            a, b = int(float(r[cols[0]])), int(float(r[cols[1]]))
+            perm = [int(float(x)) for x in str(r[cols[2]]).replace(" ", "").split(",") if x] if len(cols) > 2 and str(r[cols[2]]).strip() else list(range(1, n_ch + 1))
+            pairs.append({"a": a, "b": b, "perm": perm, "score": None})
+    except Exception:
+        return jsonify({"status": "error", "message": "대응표 엑셀을 읽지 못했습니다. 첫 두 열이 'A형 번호', 'B형 번호'(숫자)인지 확인하세요."}), 422
+    return jsonify({"status": "success", "pairs": pairs, "warnings": [], **{k: v for k, v in formmap_payload(pairs).items() if k != "pairs"}})
+
+
 # ------------------------- 새 시험지(답안지 양식) 자동 인식 -------------------------
 DETECT_DIR = os.path.join(TEMP_DIR, "layout_detect")
 os.makedirs(DETECT_DIR, exist_ok=True)
@@ -1085,6 +1192,9 @@ def update_exam(eid):
         if eid not in {e["id"] for e in registry["list"]}:
             return jsonify({"status": "error", "message": "시험을 찾을 수 없습니다."}), 404
         st = state if eid == registry["active"] else store.get_setting("state:" + eid)
+        data = {**data}
+        if data.get("form_rule") == "custom" and not data.get("form_map"):
+            data["form_map"] = st["exam"].get("form_map")          # 편집 창은 대응표를 갖고 있지 않으므로 기존 것을 유지
         try:
             e = exam_mod.normalize({**data}, _layout_of({**st["exam"], **data}))
         except ValueError as ex:

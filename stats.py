@@ -116,7 +116,7 @@ def compute(items, spq, exam=None):
         if gs:
             key_of[t] = list(max(gs)[1])      # 인원이 가장 많은 정답 설정
     conflicts, blocks, pair_invalid = [], [], False
-    paired = exam["form_rule"] == "half_swap" and f2 is not None
+    paired = exam_mod.is_paired(exam) and f2 is not None
     if paired and {f1, f2} <= types and len(key_of) == 2:
         conflicts = exam_mod.key_conflicts(exam, key_of[f1], key_of[f2])
         if len(conflicts) > 0.3 * n_q:
@@ -129,11 +129,17 @@ def compute(items, spq, exam=None):
         for it in items:
             sa = it["student_answers"]
             if it["exam_type"] != f1:
-                sa = {str(q): sa.get(str(exam_mod.other_q(exam, q)), "무표기") for q in range(1, n_q + 1)}
+                sb, sa = sa, {}
+                for q in range(1, n_q + 1):
+                    v = sb.get(str(exam_mod.other_q(exam, q)), "무표기")
+                    if str(v).isdigit():                      # 선택지 순서가 다른 문제는 첫 유형 기준 번호로 바꿔 합산
+                        c = exam_mod.to_first_choice(exam, q, int(v))
+                        v = str(c) if c else "무표기"
+                    sa[str(q)] = v
             merged.append({**it, "student_answers": sa, "exam_type": f1, "_key": key_of[f1]})
         forms.insert(0, _item_analysis(f"통합 ({f1}형 번호 기준, {f1}·{f2} 합산)", f1 + f2, key_of[f1], merged, exam))
         # 블록 정답률: 같은 문제를 앞쪽에서 풀었는지 뒤쪽에서 풀었는지의 차이 (과목의 앞 절반 / 뒤 절반)
-        for code, name, short, a0, b0 in subj:
+        for code, name, short, a0, b0 in (subj if exam["form_rule"] == "half_swap" else []):     # 블록(앞/뒤 위치) 비교는 앞뒤 맞바꿈 시험에서만
             n_s = b0 - a0 + 1
             for b_i, blabel in enumerate((f"1~{n_s // 2}번", f"{n_s // 2 + 1}~{n_s}번")):
                 qs = range(a0 + b_i * (n_s // 2), a0 + (b_i + 1) * (n_s // 2))      # 첫 유형 번호 기준
@@ -201,7 +207,7 @@ def _item_analysis(label, form, key, g, exam):
         if (cnt["무표기"] + cnt["이중"]) / n >= 0.1 and enough:
             flags.append("marking")
         rows.append({
-            "q": q, "alt_q": exam_mod.other_q(exam, q), "subject": subj[exam_mod.subject_index(exam, q)][0],
+            "q": q, "alt_q": exam_mod.other_q(exam, q, form if form in exam["forms"] else exam["forms"][0]), "subject": subj[exam_mod.subject_index(exam, q)][0],
             "subject_name": subj[exam_mod.subject_index(exam, q)][1], "answer": int(right),
             "correct_rate": _r(p * 100), "wrong_rate": _r((1 - p) * 100),
             "choices": {c: _r(cnt[c] / n * 100) for c in cnt},

@@ -88,6 +88,24 @@
         <div class="flex-1 relative min-h-[360px]"><div id="key-summary" class="absolute inset-0 text-sm bg-slate-50 p-4 rounded border overflow-y-auto font-mono"></div></div>
       </div>
 
+      <div id="formmap-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
+        <div class="flex flex-wrap justify-between items-start gap-3 mb-2">
+          <h2 class="text-lg font-bold">시험지(문제지) 등록 - A형/B형 대응 문제 찾기</h2>
+          <div class="flex flex-wrap gap-2">
+            <a href="/api/formmap/template" class="bg-slate-600 hover:bg-slate-700 text-white text-xs px-3 py-2 rounded font-bold">대응표 엑셀 받기</a>
+            <label class="bg-slate-500 hover:bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold cursor-pointer">대응표 엑셀 올리기<input type="file" accept=".xlsx" class="hidden" onchange="uploadFormMapExcel(event)"></label>
+            <button id="fm-del" onclick="deleteFormMap()" class="hidden bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded font-bold">대응표 해제</button>
+          </div>
+        </div>
+        <p class="text-sm text-slate-600">A형과 B형의 <b>문제 배치가 다를 때</b> 쓰세요. 두 문제지(글자가 들어 있는 PDF 또는 Word 파일)를 올리면 문제 내용을 읽어 같은 문제를 찾고(선택지 순서가 다른 것도), 확인 후 저장하면 <b>통계의 문항 분석(A·B 합산)이 그 대응으로 다시 계산</b>됩니다. 사진/스캔으로 만든 PDF는 글자를 읽을 수 없어 분석할 수 없습니다.</p>
+        <div id="fm-status" class="mt-3 text-sm"></div>
+        <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <label class="block text-sm font-semibold">A형 문제지 <input id="fm-file-a" type="file" accept=".pdf,.docx,.txt" class="mt-1 block w-full text-xs border rounded p-1.5"></label>
+          <label class="block text-sm font-semibold">B형 문제지 <input id="fm-file-b" type="file" accept=".pdf,.docx,.txt" class="mt-1 block w-full text-xs border rounded p-1.5"></label>
+          <button onclick="analyzeFormMap()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg">분석해서 대응 문제 찾기</button>
+        </div>
+      </div>
+
       <div id="roster-card" class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border">
         <div class="flex flex-wrap justify-between items-start gap-3 mb-2">
           <h2 class="text-lg font-bold">응시자 명단 등록 (수험번호 - 이름)</h2>
@@ -239,6 +257,14 @@
     </div>
   </dialog>
 
+  <dialog id="fm-dlg" class="rounded-xl p-0 shadow-xl border w-[min(1180px,98vw)] h-[92vh] overflow-hidden">
+    <div class="flex flex-col h-full">
+      <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50"><div><b>A형/B형 대응 문제 확인</b><div id="fm-sum" class="text-xs text-slate-500"></div></div><button onclick="document.getElementById('fm-dlg').close()" class="text-slate-500 hover:text-slate-800 font-bold px-3 py-1">닫기</button></div>
+      <div class="px-5 py-2 border-b text-sm flex flex-wrap items-center gap-4"><label class="flex items-center gap-2"><input type="checkbox" id="fm-only" onchange="renderFormMap()"> 확인이 필요한 문제만 (유사도 낮음/B형 번호 중복/선택지 순서 다름)</label><span id="fm-msg" class="text-xs"></span></div>
+      <div class="flex-1 overflow-auto px-5 py-2"><table class="w-full text-xs border-collapse"><thead class="bg-slate-100 sticky top-0"><tr><th class="p-2 border w-14">A형</th><th class="p-2 border">A형 문제</th><th class="p-2 border w-24">대응 B형</th><th class="p-2 border">B형 문제</th><th class="p-2 border w-16">유사도</th><th class="p-2 border w-40">선택지 대응 (A 1~n번 → B 번호)</th></tr></thead><tbody id="fm-tbody"></tbody></table></div>
+      <div class="px-5 py-3 border-t bg-slate-50 flex items-center gap-2"><span class="text-xs text-slate-500 flex-1">저장하면 A형 정답이 등록돼 있는 경우 B형 정답이 이 대응으로 다시 만들어지고(자동 생성된 경우), 통계의 A·B 합산 분석이 이 대응을 사용합니다. 이미 채점된 결과는 바뀌지 않습니다.</span><button onclick="saveFormMap()" id="fm-save" class="px-5 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm">대응표 저장</button></div>
+    </div>
+  </dialog>
   <dialog id="users-dlg" class="rounded-xl p-0 shadow-xl border w-[min(760px,96vw)] max-h-[90vh] overflow-hidden">
     <div class="flex flex-col max-h-[90vh]">
       <div class="flex items-center justify-between px-5 py-3 border-b bg-slate-50"><b>사용자 관리</b><button onclick="document.getElementById('users-dlg').close()" class="text-slate-500 hover:text-slate-800 font-bold px-3 py-1">닫기</button></div>
@@ -302,7 +328,7 @@
     }
     // 조회 전용 계정: 변경 기능 버튼/입력을 숨긴다 (서버도 변경 요청을 막는다)
     function applyViewer() {
-      const bad = /saveNewConfig|openExamDialog|runTest|clearTest|deleteRoster|deleteSelected|regrade|openEditor|deleteAllResults|saveConfig/;
+      const bad = /saveFormMap|deleteFormMap|analyzeFormMap|saveNewConfig|openExamDialog|runTest|clearTest|deleteRoster|deleteSelected|regrade|openEditor|deleteAllResults|saveConfig/;
       document.querySelectorAll('button[onclick]').forEach(b => { if (bad.test(b.getAttribute('onclick'))) b.classList.add('hidden'); });
       document.querySelectorAll('input[type=file]').forEach(i => { const l = i.closest('label'); if (l) l.classList.add('hidden'); });
       ['cfg-score', 'cfg-passavg', 'cfg-subfail', 'cfg-th'].forEach(id => { const e = document.getElementById(id); if (e) e.disabled = true; });
@@ -369,7 +395,7 @@
       document.title = `OCR_자동 채점 프로그램 (${e.name})`;
       document.getElementById('exam-current').innerHTML = `현재 시험: <b class="text-blue-900">${esc(e.name)}</b>`;
       const counts = (ei.ranges || []).map(x => x.end - x.start + 1), same = counts.every(c => c === counts[0]);
-      const rel = e.form_rule === 'half_swap' ? ' (각 과목의 앞 절반과 뒤 절반 블록을 맞바꿈)' : '';
+      const rel = e.form_rule === 'half_swap' ? ' (각 과목의 앞 절반과 뒤 절반 블록을 맞바꿈)' : (e.form_rule === 'custom' ? ' (문제지 분석으로 만든 대응표 사용)' : '');
       document.getElementById('exam-bullets').innerHTML =
         `<li>• <b>적용 양식:</b> ${esc(e.title || e.name)}</li>
          <li>• <b>과목 구성:</b> ${(ei.ranges || []).map(x => `${x.code}(${esc(x.short)}${same ? '' : ' ' + (x.end - x.start + 1) + '문항'})`).join(', ')}${same ? ' 각 ' + counts[0] + '문항' : ''} (총 ${ei.total_questions}문항, ${e.choices}지선다)</li>
@@ -422,7 +448,7 @@
         html += `<div class="border bg-white p-1 rounded text-center text-xs"><b>${q}.</b> ${cells.join(' / ')}</div>`;
       }
       box.innerHTML = html + '</div>';
-      renderMasterSlots();
+      renderMasterSlots(); renderFormMapCard();
     }
     function conflictText() { return ''; }      // 유형 간 정답 대조 경고는 화면에 표시하지 않는다(내부 정보)
     async function saveConfig(keys) {
@@ -702,6 +728,73 @@
       const r = await (await fetch('/api/results/' + ed.id + '/uncorrect', { method: 'POST' })).json();
       if (r.status !== 'success') { alert(r.message); return; }
       await refreshResults(); loadEd();
+    }
+
+    // ---------- A형/B형 대응 문제 (문제지 분석) ----------
+    let fm = null;
+    function renderFormMapCard() {
+      const box = document.getElementById('fm-status'); if (!box) return;
+      const e = EX(), custom = e.form_rule === 'custom';
+      document.getElementById('fm-del').classList.toggle('hidden', !custom);
+      if (e.forms.length !== 2) { box.innerHTML = '<span class="text-slate-500">이 시험은 문제 유형이 하나라 대응 문제가 필요하지 않습니다.</span>'; return; }
+      const rule = { half_swap: '각 과목의 앞 절반과 뒤 절반 블록을 맞바꾼 배치로 가정 (기본값)', none: '대응 관계 없음 (A/B 합산 분석을 하지 않음)', custom: `문제지 분석으로 만든 대응표 사용 중 (${(e.form_map || []).length}문항${(e.form_map || []).some(x => x[2].some((v, i) => v !== i + 1)) ? ', 선택지 순서가 다른 문제 포함' : ''})` }[e.form_rule] || e.form_rule;
+      box.innerHTML = `<span class="px-2 py-0.5 rounded text-xs font-bold ${custom ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${custom ? '대응표 적용됨' : '대응표 없음'}</span> ${esc(rule)}`;
+    }
+    function openFormMap(d) {
+      fm = { pairs: d.pairs.map(p => ({ a: p.a, b: p.b, perm: (p.perm || []).slice(), score: p.score, orig: p.b })), aT: d.a_texts || [], bT: d.b_texts || [], n: d.n, ch: d.choices, forms: d.forms };
+      document.getElementById('fm-sum').innerText = `${d.forms[0]}형 ${fm.n}문항 ↔ ${d.forms[1]}형  ` + (d.warnings || []).join(' ');
+      document.getElementById('fm-only').checked = false; renderFormMap(); document.getElementById('fm-dlg').showModal();
+    }
+    function fmDup() { const c = {}; fm.pairs.forEach(p => c[p.b] = (c[p.b] || 0) + 1); return c; }
+    function fmPermOk(p) { return p.perm.length === fm.ch && [...p.perm].sort((x, y) => x - y).every((v, i) => v === i + 1); }
+    function renderFormMap() {
+      const dup = fmDup(), only = document.getElementById('fm-only').checked; let bad = 0, rows = '';
+      fm.pairs.forEach(p => {
+        const isDup = dup[p.b] > 1, low = p.score != null && p.score < 0.55, pc = !p.perm.every((v, i) => v === i + 1), pbad = !fmPermOk(p);
+        if (isDup || pbad) bad++;
+        if (only && !(isDup || low || pc || pbad)) return;
+        const opts = Array.from({ length: fm.n }, (_, i) => `<option value="${i + 1}" ${i + 1 === p.b ? 'selected' : ''}>${i + 1}번</option>`).join('');
+        rows += `<tr class="border-b ${isDup || pbad ? 'bg-red-50' : (low ? 'bg-amber-50' : '')}"><td class="p-1.5 border text-center font-bold">${p.a}</td><td class="p-1.5 border">${esc(fm.aT[p.a - 1] || '')}</td>
+          <td class="p-1.5 border text-center"><select onchange="setFmB(${p.a}, +this.value)" class="border rounded px-1 py-0.5 ${isDup ? 'border-red-500 text-red-600 font-bold' : ''}">${opts}</select></td><td class="p-1.5 border">${esc(fm.bT[p.b - 1] || '')}</td>
+          <td class="p-1.5 border text-center ${low ? 'text-amber-700 font-bold' : ''}">${p.score == null ? '-' : Math.round(p.score * 100) + '%'}</td>
+          <td class="p-1.5 border text-center"><input value="${p.perm.join(',')}" onchange="setFmPerm(${p.a}, this.value)" class="border rounded px-1 py-0.5 w-32 text-center ${pc ? 'bg-yellow-50 font-bold' : ''} ${pbad ? 'border-red-500' : ''}"></td></tr>`;
+      });
+      document.getElementById('fm-tbody').innerHTML = rows || '<tr><td colspan="6" class="p-4 text-center text-slate-400">표시할 문제가 없습니다.</td></tr>';
+      const m = document.getElementById('fm-msg'), save = document.getElementById('fm-save');
+      m.innerHTML = bad ? `<span class="text-red-600 font-bold">B형 번호가 겹치거나 선택지 대응이 잘못된 문제 ${bad}개를 고쳐야 저장할 수 있습니다.</span>` : '<span class="text-emerald-700 font-bold">모든 문제가 한 번씩 대응되었습니다.</span>';
+      save.disabled = bad > 0; save.classList.toggle('opacity-50', bad > 0);
+    }
+    function setFmB(a, b) { fm.pairs.find(p => p.a === a).b = b; fm.pairs.find(p => p.a === a).score = null; renderFormMap(); }
+    function setFmPerm(a, v) { fm.pairs.find(p => p.a === a).perm = v.split(/[,\s]+/).filter(Boolean).map(Number); renderFormMap(); }
+    async function analyzeFormMap() {
+      const fa = document.getElementById('fm-file-a').files[0], fb = document.getElementById('fm-file-b').files[0];
+      if (!fa || !fb) { alert('A형과 B형 문제지 파일을 모두 선택하세요.'); return; }
+      const fd = new FormData(); fd.append('file_a', fa); fd.append('file_b', fb);
+      busy(true, '문제지를 분석하는 중...', null, '문제를 나누고 같은 문제를 찾고 있습니다');
+      let d; try { d = await (await fetch('/api/formmap/analyze', { method: 'POST', body: fd })).json(); } catch (err) { d = { status: 'error', message: String(err) }; }
+      busy(false); await new Promise(r => setTimeout(r, 60));
+      if (d.status !== 'success') { alert('분석하지 못했습니다:\n' + d.message); return; }
+      openFormMap(d);
+    }
+    async function uploadFormMapExcel(e) {
+      const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      const d = await (await fetch('/api/formmap/excel', { method: 'POST', body: fd })).json();
+      if (d.status !== 'success') { alert(d.message); return; }
+      d.a_texts = []; d.b_texts = []; openFormMap(d);
+    }
+    async function saveFormMap() {
+      const r = await (await fetch('/api/formmap', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ pairs: fm.pairs.map(p => ({ a: p.a, b: p.b, perm: p.perm })) }) })).json();
+      if (r.status !== 'success') { alert('저장하지 못했습니다: ' + r.message); return; }
+      document.getElementById('fm-dlg').close();
+      await loadConfig();
+      const c = (r.key_conflicts || []).length;
+      alert('A형/B형 대응표를 저장했습니다. 통계의 문항 분석이 이 대응으로 계산됩니다.' + (c ? `\n\n참고: 두 유형의 정답이 서로 맞지 않는 문제가 ${c}개 있습니다(A형 번호 ${r.key_conflicts.slice(0, 10).join(', ')}${c > 10 ? ' ...' : ''}). 정답 등록이나 대응을 확인하세요.` : ''));
+      if (document.getElementById('res-stats') && !document.getElementById('res-stats').classList.contains('hidden')) loadStats();
+    }
+    async function deleteFormMap() {
+      if (!confirm('A형/B형 대응표를 해제합니다. 해제하면 통계에서 A·B 합산 분석을 하지 않습니다.\n계속할까요?')) return;
+      await fetch('/api/formmap', { method: 'DELETE' }); await loadConfig();
     }
 
     // ---------- 응시자 명단 ----------
